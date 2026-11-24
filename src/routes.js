@@ -122,6 +122,10 @@ export function createRoutes({ db, production, pwnedCheck, loginLimit, accountLi
     res.redirect(303, req.user ? '/dashboard' : '/inloggen');
   });
 
+  router.get('/privacy', (req, res) => {
+    res.render('privacy', { wide: true });
+  });
+
   // --- Registreren ---------------------------------------------------------
 
   router.get('/registreren', (req, res) => {

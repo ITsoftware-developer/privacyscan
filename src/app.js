@@ -17,11 +17,13 @@ export function createApp({
   loginLimit = 10,      // mislukte inlogpogingen per kwartier per IP-adres
   accountLimit = 5,     // mislukte inlogpogingen per kwartier per account
   registerLimit = 10,   // aanmeldingen per uur per IP-adres
+  contact = {},         // naam en e-mailadres voor de privacyverklaring
 }) {
   const app = express();
   app.set('view engine', 'ejs');
   app.set('views', join(ROOT, 'views'));
   app.locals.appName = 'Privacyscan';
+  app.locals.contact = { name: contact.name || null, email: contact.email || null };
 
   // Veilige standaardinstellingen voor allerlei HTTP-headers.
   app.use(helmet({

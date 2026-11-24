@@ -1,0 +1,95 @@
+<%# Werk deze tekst bij zodra de app meer gegevens verwerkt, zoals in fase 2 en 3. %>
+<%- include('partials/head', { title: 'Privacyverklaring' }) %>
+
+<article class="card prose">
+  <h1>Privacyverklaring</h1>
+  <p class="lead">Versie van 24 november 2026</p>
+
+  <% if (!contact.name || !contact.email) { %>
+    <p class="alert alert-warning" role="note">
+      Concept: vul <code>CONTACT_NAME</code> en <code>CONTACT_EMAIL</code> in je
+      <code>.env</code> in voordat je de site online zet.
+    </p>
+  <% } %>
+
+  <p>
+    <%= appName %> helpt je te zien waar jouw gegevens online staan. Dan hoort deze
+    site zelf natuurlijk zuinig te zijn met jouw gegevens. Hier lees je wat we
+    bewaren, waarom, en wat je rechten zijn.
+  </p>
+
+  <h2>Wie is verantwoordelijk?</h2>
+  <p>
+    Verantwoordelijk voor je gegevens op deze site is <strong><%= contact.name || '[jouw naam]' %></strong>.
+    Je bereikt ons via <strong><%= contact.email || '[jouw e-mailadres]' %></strong>.
+  </p>
+
+  <h2>Welke gegevens we bewaren en waarom</h2>
+  <ul>
+    <li>
+      <strong>Je naam en e-mailadres</strong>, om je account te maken en je te
+      herkennen als je inlogt. Dit is nodig om je het account te kunnen geven
+      waar je om vraagt (artikel 6 lid 1 onder b AVG).
+    </li>
+    <li>
+      <strong>Je wachtwoord</strong>, maar alleen als argon2id-hash. Daarmee
+      controleren we dat jij het bent. Je wachtwoord zelf bewaren we nooit.
+    </li>
+    <li>
+      <strong>Een sessiecookie</strong>, zodat je ingelogd blijft. Zonder dit
+      cookie werkt inloggen niet, daarom vragen we er geen toestemming voor.
+      Andere cookies gebruiken we niet: geen statistieken, geen advertenties,
+      geen tracking.
+    </li>
+    <li>
+      <strong>Gehashte IP-adressen en e-mailadressen bij inlogpogingen</strong>,
+      om te voorkomen dat iemand wachtwoorden gaat raden. Dat doen we omdat we
+      de site en jouw account willen beveiligen (gerechtvaardigd belang,
+      artikel 6 lid 1 onder f AVG).
+    </li>
+  </ul>
+
+  <h2>Met wie we gegevens delen</h2>
+  <ul>
+    <li>
+      Als je een wachtwoord kiest, checken we of het in een bekend datalek staat,
+      via Have I Been Pwned. Daarbij gaan alleen de eerste 5 tekens van een hash
+      van je wachtwoord naar hen; je wachtwoord zelf en je e-mailadres niet.
+    </li>
+    <li>
+      Onze hostingpartij beheert de server waarop de site draait en verwerkt
+      je gegevens alleen in onze opdracht.
+    </li>
+    <li>We verkopen je gegevens niet en geven ze aan niemand anders.</li>
+  </ul>
+
+  <h2>Hoe lang we gegevens bewaren</h2>
+  <ul>
+    <li>
+      Je naam, e-mailadres en wachtwoord-hash: zolang je account bestaat.
+      Verwijder je je account via je dashboard, dan wissen we ze meteen.
+    </li>
+    <li>Sessies: maximaal 7 dagen, of korter als je uitlogt.</li>
+    <li>Tellers van inlogpogingen: maximaal een uur.</li>
+  </ul>
+
+  <h2>Je rechten</h2>
+  <p>
+    Je mag je gegevens inzien, laten corrigeren of laten verwijderen. Je mag
+    bezwaar maken tegen het gebruik ervan en je gegevens meenemen naar een
+    andere dienst. Je account verwijderen kan zelf, via je dashboard. Voor de
+    rest mail je naar <strong><%= contact.email || '[jouw e-mailadres]' %></strong>;
+    je krijgt binnen een maand antwoord.
+  </p>
+
+  <h2>Een klacht?</h2>
+  <p>
+    Ben je niet tevreden over hoe we met je gegevens omgaan, laat het ons dan
+    weten. Je kunt ook een klacht indienen bij de Autoriteit Persoonsgegevens
+    (autoriteitpersoonsgegevens.nl).
+  </p>
+
+  <p><a href="/">Terug naar de start</a></p>
+</article>
+
+<%- include('partials/foot') %>

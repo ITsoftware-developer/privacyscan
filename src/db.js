@@ -35,3 +35,10 @@ export function openDatabase(path) {
   `);
   return db;
 }
+
+// Wist verlopen sessies en tellers. server.js roept dit elke minuut aan.
+export function removeExpired(db) {
+  const now = Date.now();
+  db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(now);
+  db.prepare('DELETE FROM rate_limits WHERE reset_at <= ?').run(now);
+}

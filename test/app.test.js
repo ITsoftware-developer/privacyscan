@@ -356,6 +356,29 @@ test('account verwijderen kan alleen met het juiste wachtwoord', async (t) => {
   assert.equal(countUsers(db), 1);
 });
 
+test('de privacyverklaring is voor iedereen te lezen en overal gelinkt', async (t) => {
+  const { base } = await startServer(t);
+
+  const response = await send(base, '/privacy');
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /<h1>Privacyverklaring<\/h1>/);
+  assert.match(html, /Concept: vul/); // zonder contactgegevens staat er een herinnering
+
+  assert.match(await (await send(base, '/inloggen')).text(), /href="\/privacy"/);
+  assert.match(await (await send(base, '/registreren')).text(), /href="\/privacy"/);
+});
+
+test('de privacyverklaring toont je contactgegevens als je die instelt', async (t) => {
+  const contact = { name: 'Anna de Vries', email: 'privacy@example.com' };
+  const { base } = await startServer(t, { contact });
+
+  const html = await (await send(base, '/privacy')).text();
+  assert.match(html, /Anna de Vries/);
+  assert.match(html, /privacy@example\.com/);
+  assert.doesNotMatch(html, /Concept: vul/);
+});
+
 test('zonder inloggen kun je geen account verwijderen', async (t) => {
   const { db, base } = await startServer(t);
   await register(base);
