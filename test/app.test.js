@@ -313,3 +313,58 @@ test('onbekende pagina geeft een nette 404', async (t) => {
   assert.equal(response.status, 404);
   assert.match(await response.text(), /Pagina niet gevonden/);
 });
+
+test('account verwijderen wist al je gegevens en logt je uit', async (t) => {
+  const { db, base } = await startServer(t);
+  const cookie = sessionCookie(await register(base));
+
+  const dashboard = await (await send(base, '/dashboard', { cookie })).text();
+  assert.match(dashboard, /href="\/account\/verwijderen"/);
+  assert.equal((await send(base, '/account/verwijderen', { cookie })).status, 200);
+
+  const response = await send(base, '/account/verwijderen', {
+    method: 'POST', cookie, fields: { wachtwoord: ANNA.wachtwoord },
+  });
+  assert.equal(response.status, 303);
+  assert.equal(response.headers.get('location'), '/inloggen?verwijderd');
+  assert.equal(countUsers(db), 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM sessions').get().n, 0);
+
+  // De oude cookie werkt niet meer, en inloggen kan ook niet meer.
+  assert.equal((await send(base, '/dashboard', { cookie })).status, 303);
+  assert.equal((await login(base, ANNA.email, ANNA.wachtwoord)).status, 401);
+
+  const notice = await (await send(base, '/inloggen?verwijderd')).text();
+  assert.match(notice, /Je account en al je gegevens zijn verwijderd/);
+});
+
+test('account verwijderen kan alleen met het juiste wachtwoord', async (t) => {
+  const { db, base } = await startServer(t, { accountLimit: 2 });
+  const cookie = sessionCookie(await register(base));
+  const tryDelete = (wachtwoord) => send(base, '/account/verwijderen', {
+    method: 'POST', cookie, fields: { wachtwoord },
+  });
+
+  const wrong = await tryDelete(WRONG);
+  assert.equal(wrong.status, 401);
+  assert.match(alertText(await wrong.text()), /niet verwijderd/);
+  assert.equal(countUsers(db), 1);
+
+  // Na te veel foute pogingen moet je even wachten, ook met het goede wachtwoord.
+  await tryDelete(WRONG);
+  assert.equal((await tryDelete(ANNA.wachtwoord)).status, 429);
+  assert.equal(countUsers(db), 1);
+});
+
+test('zonder inloggen kun je geen account verwijderen', async (t) => {
+  const { db, base } = await startServer(t);
+  await register(base);
+
+  assert.equal((await send(base, '/account/verwijderen')).status, 303);
+  const response = await send(base, '/account/verwijderen', {
+    method: 'POST', fields: { wachtwoord: ANNA.wachtwoord },
+  });
+  assert.equal(response.status, 303);
+  assert.equal(response.headers.get('location'), '/inloggen');
+  assert.equal(countUsers(db), 1);
+});

@@ -122,6 +122,13 @@ input:focus {
   color: #fff;
 }
 .button-primary:hover { background: var(--primary-dark); }
+.button-danger {
+  width: 100%;
+  margin-top: 24px;
+  background: var(--error);
+  color: #fff;
+}
+.button-danger:hover { background: #912018; }
 .button-quiet {
   padding: 7px 14px;
   background: transparent;
@@ -213,6 +220,8 @@ input:focus {
 }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; font-weight: 500; overflow-wrap: anywhere; }
+.card-foot { margin: 16px 0 0; font-size: 0.9rem; }
+.link-danger { color: var(--error); }
 
 .footer { padding: 24px; text-align: center; font-size: 0.85rem; color: var(--muted); }
 

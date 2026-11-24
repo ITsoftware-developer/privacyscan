@@ -88,6 +88,21 @@ export function createRoutes({ db, production, pwnedCheck, loginLimit, accountLi
     handler: tooManyAttempts,
   });
 
+  // Ook bij het verwijderen van je account vragen we je wachtwoord. Wie een
+  // gestolen sessie heeft, kan daar dus niet eindeloos wachtwoorden proberen.
+  const deleteLimiter = rateLimit({
+    windowMs: FIFTEEN_MINUTES,
+    limit: accountLimit,
+    skipSuccessfulRequests: true,
+    standardHeaders: false,
+    legacyHeaders: false,
+    keyGenerator: (req) => String(req.user.id),
+    store: new SqliteStore(db, 'delete-account:'),
+    handler: (req, res) => res.status(429).render('account-verwijderen', {
+      error: 'Te veel mislukte pogingen. Probeer het over een kwartier opnieuw.',
+    }),
+  });
+
   const registerLimiter = rateLimit({
     windowMs: ONE_HOUR,
     limit: registerLimit,
@@ -151,7 +166,9 @@ export function createRoutes({ db, production, pwnedCheck, loginLimit, accountLi
 
   router.get('/inloggen', (req, res) => {
     if (req.user) return res.redirect(303, '/dashboard');
-    const notice = req.query.uitgelogd !== undefined ? 'Je bent uitgelogd.' : null;
+    let notice = null;
+    if (req.query.uitgelogd !== undefined) notice = 'Je bent uitgelogd.';
+    if (req.query.verwijderd !== undefined) notice = 'Je account en al je gegevens zijn verwijderd.';
     res.render('inloggen', { error: null, notice, values: {} });
   });
 
@@ -189,6 +206,30 @@ export function createRoutes({ db, production, pwnedCheck, loginLimit, accountLi
       year: 'numeric',
     });
     res.render('dashboard', { memberSince, wide: true });
+  });
+
+  // --- Account verwijderen -------------------------------------------------
+
+  router.get('/account/verwijderen', requireLogin, (req, res) => {
+    res.render('account-verwijderen', { error: null });
+  });
+
+  router.post('/account/verwijderen', requireLogin, deleteLimiter, async (req, res) => {
+    const { password } = readForm(req.body);
+    const { password_hash } = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id);
+
+    if (!(await verifyPassword(password_hash, password))) {
+      return res.status(401).render('account-verwijderen', {
+        error: 'Dat wachtwoord klopt niet. Je account is niet verwijderd.',
+      });
+    }
+
+    // Sessies verdwijnen automatisch mee (ON DELETE CASCADE in db.js). Geef
+    // nieuwe tabellen in de volgende fases ook ON DELETE CASCADE, dan blijft
+    // dit ene commando genoeg om alles van iemand te wissen.
+    db.prepare('DELETE FROM users WHERE id = ?').run(req.user.id);
+    res.clearCookie(COOKIE_NAME, { path: '/' });
+    res.redirect(303, '/inloggen?verwijderd');
   });
 
   return router;

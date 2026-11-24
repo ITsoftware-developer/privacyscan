@@ -1,0 +1,24 @@
+<%- include('partials/head', { title: 'Account verwijderen' }) %>
+
+<section class="card form-card">
+  <h1>Account verwijderen</h1>
+  <p class="lead">
+    Hiermee verwijder je je account en alles wat we van je bewaren: je naam, je
+    e-mailadres en je wachtwoord-hash. Dit kun je niet ongedaan maken.
+  </p>
+
+  <% if (error) { %>
+    <p class="alert alert-error" role="alert"><%= error %></p>
+  <% } %>
+
+  <form method="post" action="/account/verwijderen">
+    <label for="wachtwoord">Bevestig met je wachtwoord</label>
+    <input id="wachtwoord" name="wachtwoord" type="password" autocomplete="current-password" required>
+
+    <button type="submit" class="button button-danger">Account definitief verwijderen</button>
+  </form>
+
+  <p class="switch"><a href="/dashboard">Nee, terug naar mijn dashboard</a></p>
+</section>
+
+<%- include('partials/foot') %>
