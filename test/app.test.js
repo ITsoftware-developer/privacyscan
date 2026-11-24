@@ -307,6 +307,52 @@ test('beveiligingsheaders staan aan', async (t) => {
   assert.equal(response.headers.get('x-powered-by'), null);
 });
 
+test('de startpagina stuurt je naar inloggen of naar je dashboard', async (t) => {
+  const { base } = await startServer(t);
+  assert.equal((await send(base, '/')).headers.get('location'), '/inloggen');
+
+  const cookie = sessionCookie(await register(base));
+  for (const path of ['/', '/inloggen', '/registreren']) {
+    const response = await send(base, path, { cookie });
+    assert.equal(response.headers.get('location'), '/dashboard', path);
+  }
+});
+
+test('te veel aanmeldingen vanaf één IP-adres worden even tegengehouden', async (t) => {
+  const { db, base } = await startServer(t, { registerLimit: 2 });
+  await register(base, { ...ANNA, email: 'een@example.com' });
+  await register(base, { ...ANNA, email: 'twee@example.com' });
+
+  const third = await register(base, { ...ANNA, email: 'drie@example.com' });
+  assert.equal(third.status, 429);
+  assert.match(alertText(await third.text()), /Te veel aanmeldingen/);
+  assert.equal(countUsers(db), 2);
+});
+
+test('twee aanmeldingen tegelijk met hetzelfde adres leveren één account op', async (t) => {
+  // De wachtwoordcheck wacht even, zodat beide aanmeldingen zeker tegelijk lopen.
+  const slowCheck = () => new Promise((resolve) => setTimeout(() => resolve(false), 50));
+  const { db, base } = await startServer(t, { pwnedCheck: slowCheck });
+
+  const responses = await Promise.all([register(base), register(base)]);
+  assert.deepEqual(responses.map((r) => r.status).sort(), [303, 400]);
+  assert.equal(countUsers(db), 1);
+});
+
+test('een onverwachte fout geeft een nette foutpagina, zonder technische details', async (t) => {
+  t.mock.method(console, 'error', () => {}); // houd de testuitvoer schoon
+  const brokenCheck = async () => {
+    throw new Error('geheime details uit de server');
+  };
+  const { base } = await startServer(t, { pwnedCheck: brokenCheck });
+
+  const response = await register(base);
+  assert.equal(response.status, 500);
+  const html = await response.text();
+  assert.match(html, /Er ging iets mis/);
+  assert.ok(!html.includes('geheime details'));
+});
+
 test('onbekende pagina geeft een nette 404', async (t) => {
   const { base } = await startServer(t);
   const response = await send(base, '/bestaat-niet');

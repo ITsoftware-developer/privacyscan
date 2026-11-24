@@ -41,6 +41,14 @@ test('opvulregels met telling 0 tellen niet mee', async () => {
   assert.equal(await isPwned('password', { fetchFn: fakeApi(body) }), false);
 });
 
+test('een foutcode van de API telt als niet bereikbaar', async (t) => {
+  t.mock.method(console, 'warn', () => {});
+  const broken = async () => new Response('', { status: 503 });
+
+  await assert.rejects(timesPwned('password', { fetchFn: broken }), /status 503/);
+  assert.equal(await isPwned('password', { fetchFn: broken }), false);
+});
+
 test('als de API niet bereikbaar is, gaat de registratie gewoon door', async (t) => {
   t.mock.method(console, 'warn', () => {});
   const offline = async () => { throw new Error('geen internet'); };

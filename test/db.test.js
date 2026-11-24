@@ -1,7 +1,28 @@
 // Tests voor de database.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { openDatabase, removeExpired } from '../src/db.js';
+
+test('openDatabase maakt de map, het bestand en de tabellen aan', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'privacyscan-'));
+  try {
+    const path = join(dir, 'nieuwe-map', 'test.db');
+    const db = openDatabase(path);
+    const tables = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+      .all()
+      .map((row) => row.name);
+    db.close();
+
+    assert.ok(existsSync(path));
+    assert.deepEqual(tables, ['rate_limits', 'sessions', 'users']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('removeExpired wist alleen verlopen sessies en tellers', () => {
   const db = openDatabase(':memory:');
