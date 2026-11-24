@@ -1,0 +1,35 @@
+<%- include('partials/head', { title: 'Account maken' }) %>
+
+<section class="card form-card">
+  <h1>Account maken</h1>
+  <p class="lead">Straks zie je hier waar jouw gegevens online staan, en kun je ze laten verwijderen.</p>
+
+  <% if (error) { %>
+    <p class="alert alert-error" role="alert"><%= error %></p>
+  <% } %>
+
+  <form method="post" action="/registreren">
+    <label for="naam">Je naam</label>
+    <input id="naam" name="naam" autocomplete="name" required maxlength="80" value="<%= values.naam ?? '' %>">
+
+    <label for="email">E-mailadres</label>
+    <input id="email" name="email" type="email" autocomplete="email" required value="<%= values.email ?? '' %>">
+
+    <label for="wachtwoord">Wachtwoord</label>
+    <input id="wachtwoord" name="wachtwoord" type="password" autocomplete="new-password"
+           required minlength="12" maxlength="128" aria-describedby="wachtwoord-uitleg">
+    <p id="wachtwoord-uitleg" class="hint">
+      Minimaal 12 tekens; een zinnetje van een paar woorden werkt prima.
+      We checken anoniem of je wachtwoord in een bekend datalek voorkomt.
+    </p>
+
+    <label for="wachtwoord2">Herhaal je wachtwoord</label>
+    <input id="wachtwoord2" name="wachtwoord2" type="password" autocomplete="new-password" required>
+
+    <button type="submit" class="button button-primary">Account maken</button>
+  </form>
+
+  <p class="switch">Heb je al een account? <a href="/inloggen">Inloggen</a></p>
+</section>
+
+<%- include('partials/foot') %>

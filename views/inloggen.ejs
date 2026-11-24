@@ -1,0 +1,27 @@
+<%- include('partials/head', { title: 'Inloggen' }) %>
+
+<section class="card form-card">
+  <h1>Inloggen</h1>
+  <p class="lead">Welkom terug.</p>
+
+  <% if (notice) { %>
+    <p class="alert alert-ok" role="status"><%= notice %></p>
+  <% } %>
+  <% if (error) { %>
+    <p class="alert alert-error" role="alert"><%= error %></p>
+  <% } %>
+
+  <form method="post" action="/inloggen">
+    <label for="email">E-mailadres</label>
+    <input id="email" name="email" type="email" autocomplete="email" required value="<%= values.email ?? '' %>">
+
+    <label for="wachtwoord">Wachtwoord</label>
+    <input id="wachtwoord" name="wachtwoord" type="password" autocomplete="current-password" required>
+
+    <button type="submit" class="button button-primary">Inloggen</button>
+  </form>
+
+  <p class="switch">Nog geen account? <a href="/registreren">Account maken</a></p>
+</section>
+
+<%- include('partials/foot') %>

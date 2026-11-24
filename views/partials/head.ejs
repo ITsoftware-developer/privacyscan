@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= title %> · <%= appName %></title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">
+      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+        <path class="shield" d="M12 2 4 5.2v5.9c0 5 3.4 9.5 8 10.9 4.6-1.4 8-5.9 8-10.9V5.2L12 2Z" />
+        <path class="check" d="m8.6 12.2 2.4 2.4 4.4-4.8" />
+      </svg>
+      <%= appName %>
+    </a>
+    <% if (locals.user) { %>
+      <form method="post" action="/uitloggen">
+        <button type="submit" class="button button-quiet">Uitloggen</button>
+      </form>
+    <% } %>
+  </header>
+  <main class="<%= locals.wide ? 'page page-wide' : 'page' %>">

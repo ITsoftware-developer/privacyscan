@@ -1,0 +1,61 @@
+<%- include('partials/head', { title: 'Dashboard' }) %>
+
+<section class="welcome">
+  <h1>Hoi <%= user.name %></h1>
+  <p class="lead">Dit is je privacy-dashboard. Hier zie je straks waar je gegevens online staan en wat je eraan doet.</p>
+</section>
+
+<ol class="steps" aria-label="Voortgang van het project">
+  <li class="step done"><span class="step-dot" aria-hidden="true">✓</span>Basis</li>
+  <li class="step"><span class="step-dot">2</span>Zoeken</li>
+  <li class="step"><span class="step-dot">3</span>Verwijderen</li>
+  <li class="step"><span class="step-dot">4</span>Automatisch</li>
+</ol>
+
+<div class="grid">
+  <article class="card card-wide">
+    <header class="card-head">
+      <h2>Je account</h2>
+      <span class="badge badge-ok">Klaar</span>
+    </header>
+    <dl class="facts">
+      <dt>E-mailadres</dt><dd><%= user.email %></dd>
+      <dt>Lid sinds</dt><dd><%= memberSince %></dd>
+      <dt>Wachtwoord</dt><dd>Veilig opgeslagen met argon2id</dd>
+    </dl>
+  </article>
+
+  <article class="card card-soon">
+    <header class="card-head">
+      <h2>Datalekken</h2>
+      <span class="badge">Fase 2</span>
+    </header>
+    <p class="card-text">Check of <strong><%= user.email %></strong> in bekende datalekken zit, via Have I Been Pwned.</p>
+  </article>
+
+  <article class="card card-soon">
+    <header class="card-head">
+      <h2>Waar sta je online?</h2>
+      <span class="badge">Fase 2</span>
+    </header>
+    <p class="card-text">Zoek op welke sites je naam opduikt, en kies wat je weg wilt hebben.</p>
+  </article>
+
+  <article class="card card-soon">
+    <header class="card-head">
+      <h2>Verwijderverzoeken</h2>
+      <span class="badge">Fase 3</span>
+    </header>
+    <p class="card-text">Per site een AVG-verwijderverzoek, met de status: verstuurd, beantwoord of verwijderd.</p>
+  </article>
+
+  <article class="card card-soon">
+    <header class="card-head">
+      <h2>Automatisch scannen</h2>
+      <span class="badge">Fase 4</span>
+    </header>
+    <p class="card-text">Regelmatig opnieuw zoeken, en een mail als er iets nieuws is gevonden.</p>
+  </article>
+</div>
+
+<%- include('partials/foot') %>
