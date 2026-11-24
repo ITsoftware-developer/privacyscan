@@ -12,19 +12,21 @@ const ANNA = {
   wachtwoord2: 'paars konijn op de fiets',
 };
 
-// Start de app met een lege database in het geheugen. De wachtwoordcheck
-// tegen datalekken staat uit, zodat de tests zonder internet werken.
+// Start de app met een lege database in het geheugen (of met de database die je
+// meegeeft). De wachtwoordcheck tegen datalekken staat uit, zodat de tests
+// zonder internet werken.
 async function startServer(t, options = {}) {
-  const db = openDatabase(':memory:');
-  const app = createApp({ db, pwnedCheck: async () => false, ...options });
+  const db = options.db ?? openDatabase(':memory:');
+  const app = createApp({ pwnedCheck: async () => false, ...options, db });
   const server = await new Promise((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
   });
-  t.after(() => {
+  const close = () => {
     server.closeAllConnections();
     return new Promise((resolve) => server.close(resolve));
-  });
-  return { db, base: `http://127.0.0.1:${server.address().port}` };
+  };
+  t.after(close);
+  return { db, close, base: `http://127.0.0.1:${server.address().port}` };
 }
 
 // Doet een verzoek zoals een browser dat zou doen. Bij een formulier sturen
@@ -225,17 +227,62 @@ test('een wachtwoord uit een bekend datalek wordt geweigerd', async (t) => {
   assert.equal(countUsers(db), 0);
 });
 
-test('na te veel mislukte inlogpogingen moet je wachten', async (t) => {
+const WRONG = 'fout fout fout fout';
+
+test('na te veel mislukte inlogpogingen vanaf één IP-adres moet je wachten', async (t) => {
   const { base } = await startServer(t, { loginLimit: 3 });
   await register(base);
 
   for (let i = 0; i < 3; i++) {
-    assert.equal((await login(base, ANNA.email, 'fout fout fout fout')).status, 401);
+    assert.equal((await login(base, ANNA.email, WRONG)).status, 401);
   }
   // Nu is het even op slot, zelfs met het goede wachtwoord.
   const blocked = await login(base, ANNA.email, ANNA.wachtwoord);
   assert.equal(blocked.status, 429);
   assert.match(alertText(await blocked.text()), /Te veel mislukte pogingen/);
+});
+
+test('na te veel mislukte pogingen op één account gaat alleen dat account even op slot', async (t) => {
+  // De IP-limiet staat hoog, zodat we zien dat de limiet per account apart werkt.
+  const { db, base } = await startServer(t, { loginLimit: 100, accountLimit: 3 });
+  await register(base);
+  await register(base, { ...ANNA, email: 'bram@example.com' });
+
+  for (let i = 0; i < 3; i++) {
+    assert.equal((await login(base, ANNA.email, WRONG)).status, 401);
+  }
+  assert.equal((await login(base, ANNA.email, ANNA.wachtwoord)).status, 429);
+  assert.equal((await login(base, 'bram@example.com', ANNA.wachtwoord)).status, 303);
+
+  // In de database staan alleen hashes, geen leesbare e-mail- of IP-adressen.
+  for (const { id } of db.prepare('SELECT id FROM rate_limits').all()) {
+    assert.match(id, /^[0-9a-f]{64}$/);
+  }
+});
+
+test('de telling overleeft een herstart van de server', async (t) => {
+  const db = openDatabase(':memory:');
+  const first = await startServer(t, { db, loginLimit: 100, accountLimit: 3 });
+  await register(first.base);
+  for (let i = 0; i < 3; i++) {
+    await login(first.base, ANNA.email, WRONG);
+  }
+  await first.close();
+
+  // Een nieuwe server met dezelfde database weet nog van de mislukte pogingen.
+  const second = await startServer(t, { db, loginLimit: 100, accountLimit: 3 });
+  assert.equal((await login(second.base, ANNA.email, ANNA.wachtwoord)).status, 429);
+});
+
+test('na een geslaagde login begint de telling voor dat account opnieuw', async (t) => {
+  const { base } = await startServer(t, { loginLimit: 100, accountLimit: 3 });
+  await register(base);
+
+  // Zonder reset zou de vierde mislukte poging al geblokkeerd worden.
+  for (const password of [WRONG, WRONG, ANNA.wachtwoord, WRONG, WRONG]) {
+    await login(base, ANNA.email, password);
+  }
+  assert.equal((await login(base, ANNA.email, ANNA.wachtwoord)).status, 303);
 });
 
 test('namen worden veilig getoond, zonder HTML-injectie', async (t) => {

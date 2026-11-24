@@ -25,6 +25,13 @@ export function openDatabase(path) {
       user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       expires_at INTEGER NOT NULL
     );
+
+    -- Tellers tegen wachtwoorden raden (zie limit-store.js)
+    CREATE TABLE IF NOT EXISTS rate_limits (
+      id       TEXT    PRIMARY KEY,     -- SHA-256 van bijvoorbeeld een IP- of e-mailadres
+      hits     INTEGER NOT NULL,
+      reset_at INTEGER NOT NULL
+    );
   `);
   return db;
 }

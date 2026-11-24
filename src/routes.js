@@ -10,7 +10,10 @@ import {
   requireLogin,
   verifyPassword,
 } from './auth.js';
+import { SqliteStore } from './limit-store.js';
 
+const FIFTEEN_MINUTES = 15 * 60 * 1000;
+const ONE_HOUR = 60 * 60 * 1000;
 const MIN_PASSWORD = 12;
 const MAX_PASSWORD = 128;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -36,7 +39,7 @@ function checkRegistration({ name, email, password, password2 }) {
   return null;
 }
 
-export function createRoutes({ db, production, pwnedCheck, loginLimit, registerLimit }) {
+export function createRoutes({ db, production, pwnedCheck, loginLimit, accountLimit, registerLimit }) {
   const router = Router();
 
   // Maakt een sessie aan en zet het token in een cookie.
@@ -51,25 +54,46 @@ export function createRoutes({ db, production, pwnedCheck, loginLimit, registerL
     });
   }
 
-  // Tegen wachtwoorden raden: na te veel mislukte pogingen moet je even wachten.
-  const loginLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
+  // Tegen wachtwoorden raden. Twee limieten, allebei per kwartier:
+  // - per IP-adres: tegen één aanvaller die veel accounts probeert;
+  // - per account: tegen een aanvaller met veel IP-adressen die één account probeert.
+  // Alleen mislukte pogingen tellen mee, en de tellers staan in de database.
+  //
+  // Let op de afweging: iemand die jouw e-mailadres kent, kan je account zo
+  // ook een kwartier op slot zetten. Daarom duurt de pauze niet langer.
+  const tooManyAttempts = (req, res) => res.status(429).render('inloggen', {
+    error: 'Te veel mislukte pogingen. Probeer het over een kwartier opnieuw.',
+    notice: null,
+    values: { email: readForm(req.body).email },
+  });
+
+  const loginIpLimiter = rateLimit({
+    windowMs: FIFTEEN_MINUTES,
     limit: loginLimit,
-    skipSuccessfulRequests: true, // alleen mislukte pogingen tellen mee
-    standardHeaders: 'draft-8',
+    skipSuccessfulRequests: true,
+    standardHeaders: false,
     legacyHeaders: false,
-    handler: (req, res) => res.status(429).render('inloggen', {
-      error: 'Te veel mislukte pogingen. Probeer het over een kwartier opnieuw.',
-      notice: null,
-      values: { email: readForm(req.body).email },
-    }),
+    store: new SqliteStore(db, 'login-ip:'),
+    handler: tooManyAttempts,
+  });
+
+  const loginAccountLimiter = rateLimit({
+    windowMs: FIFTEEN_MINUTES,
+    limit: accountLimit,
+    skipSuccessfulRequests: true,
+    standardHeaders: false,
+    legacyHeaders: false,
+    keyGenerator: (req) => readForm(req.body).email, // tel per ingevuld e-mailadres
+    store: new SqliteStore(db, 'login-account:'),
+    handler: tooManyAttempts,
   });
 
   const registerLimiter = rateLimit({
-    windowMs: 60 * 60 * 1000,
+    windowMs: ONE_HOUR,
     limit: registerLimit,
-    standardHeaders: 'draft-8',
+    standardHeaders: false,
     legacyHeaders: false,
+    store: new SqliteStore(db, 'register-ip:'),
     handler: (req, res) => {
       const form = readForm(req.body);
       res.status(429).render('registreren', {
@@ -131,7 +155,7 @@ export function createRoutes({ db, production, pwnedCheck, loginLimit, registerL
     res.render('inloggen', { error: null, notice, values: {} });
   });
 
-  router.post('/inloggen', loginLimiter, async (req, res) => {
+  router.post('/inloggen', loginIpLimiter, loginAccountLimiter, async (req, res) => {
     const { email, password } = readForm(req.body);
     const user = db.prepare('SELECT id, password_hash FROM users WHERE email = ?').get(email);
     const passwordOk = await verifyPassword(user?.password_hash ?? DUMMY_HASH, password);
@@ -146,6 +170,7 @@ export function createRoutes({ db, production, pwnedCheck, loginLimit, registerL
     }
 
     startSession(res, user.id);
+    await loginAccountLimiter.resetKey(email); // gelukt: de telling voor dit account weer op nul
     res.redirect(303, '/dashboard');
   });
 

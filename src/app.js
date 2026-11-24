@@ -15,6 +15,7 @@ export function createApp({
   production = false,
   pwnedCheck = isPwned, // de tests vervangen deze, zodat ze ook offline werken
   loginLimit = 10,      // mislukte inlogpogingen per kwartier per IP-adres
+  accountLimit = 5,     // mislukte inlogpogingen per kwartier per account
   registerLimit = 10,   // aanmeldingen per uur per IP-adres
 }) {
   const app = express();
@@ -42,7 +43,7 @@ export function createApp({
   app.use(cookieParser());
   app.use(checkOrigin);
   app.use(loadUser(db));
-  app.use(createRoutes({ db, production, pwnedCheck, loginLimit, registerLimit }));
+  app.use(createRoutes({ db, production, pwnedCheck, loginLimit, accountLimit, registerLimit }));
 
   // Onbekende pagina
   app.use((req, res) => {
