@@ -82,25 +82,40 @@ export function requireLogin(req, res, next) {
 }
 
 // Bescherming tegen CSRF: een andere website mag geen formulier naar onze site
-// sturen namens jou. Browsers zetten bij elk POST-verzoek een Origin-header
-// mee; die moet bij onze eigen site horen. (De SameSite-cookie helpt ook al.)
+// sturen namens jou. Moderne browsers vertellen bij elk verzoek waar het
+// vandaan komt; wij laten alleen verzoeken van onze eigen site door. (De
+// SameSite-cookie is een tweede vangnet.)
 export function checkOrigin(req, res, next) {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  if (comesFromOurSite(req)) return next();
 
+  res.status(403).render('fout', {
+    title: 'Niet toegestaan',
+    message: 'Dit formulier kwam niet van deze website en is daarom geweigerd.',
+  });
+}
+
+function comesFromOurSite(req) {
+  // 1. Sec-Fetch-Site: de duidelijkste aanwijzing. Browsers sturen hem mee via
+  //    https en op je eigen computer (localhost).
+  //    'same-origin' = van onze eigen pagina's, 'none' = door de gebruiker zelf
+  //    gestart (bijvoorbeeld een bladwijzer). Al het andere komt van elders.
+  const fetchSite = req.get('sec-fetch-site');
+  if (fetchSite !== undefined) {
+    return fetchSite === 'same-origin' || fetchSite === 'none';
+  }
+
+  // 2. Origin: sturen browsers mee bij elk formulier, ook via gewone http.
   const origin = req.get('origin');
-  if (origin === undefined) return next(); // geen browser, bijvoorbeeld curl
+  if (origin !== undefined) {
+    try {
+      return new URL(origin).host === req.get('host');
+    } catch {
+      return false; // "null" of iets onleesbaars: niet vertrouwen
+    }
+  }
 
-  let originHost = null;
-  try {
-    originHost = new URL(origin).host;
-  } catch {
-    // "null" of iets onleesbaars: niet vertrouwen
-  }
-  if (originHost !== req.get('host')) {
-    return res.status(403).render('fout', {
-      title: 'Niet toegestaan',
-      message: 'Dit formulier kwam niet van deze website en is daarom geweigerd.',
-    });
-  }
-  next();
+  // 3. Geen van beide: dan is het geen moderne browser. Deze site heeft geen API
+  //    voor andere programma's, dus weigeren we het voor de zekerheid.
+  return false;
 }

@@ -27,13 +27,15 @@ async function startServer(t, options = {}) {
   return { db, base: `http://127.0.0.1:${server.address().port}` };
 }
 
-// Doet een verzoek zoals een browser dat zou doen (inclusief Origin-header bij formulieren).
-function send(base, path, { method = 'GET', fields, cookie, origin = base } = {}) {
+// Doet een verzoek zoals een browser dat zou doen. Bij een formulier sturen
+// browsers de headers Origin en Sec-Fetch-Site mee; met null laat je er een weg.
+function send(base, path, { method = 'GET', fields, cookie, origin = base, fetchSite = 'same-origin' } = {}) {
   const headers = {};
   if (cookie) headers.cookie = cookie;
   if (method !== 'GET') {
     headers['content-type'] = 'application/x-www-form-urlencoded';
-    if (origin !== undefined) headers.origin = origin;
+    if (origin !== null) headers.origin = origin;
+    if (fetchSite !== null) headers['sec-fetch-site'] = fetchSite;
   }
   return fetch(base + path, {
     method,
@@ -154,14 +156,33 @@ test('uitloggen maakt de sessie ongeldig', async (t) => {
 
 test('een formulier vanaf een andere website wordt geweigerd (CSRF)', async (t) => {
   const { db, base } = await startServer(t);
-
-  const otherSite = await register(base, ANNA, { origin: 'https://andere-site.example' });
-  assert.equal(otherSite.status, 403);
-
-  const nullOrigin = await register(base, ANNA, { origin: 'null' });
-  assert.equal(nullOrigin.status, 403);
-
+  const attempts = [
+    { fetchSite: 'cross-site', origin: 'https://andere-site.example' }, // moderne browser
+    { fetchSite: 'same-site', origin: 'https://sub.example.com' },      // ander subdomein
+    { fetchSite: 'cross-site', origin: base },                          // Sec-Fetch-Site weegt het zwaarst
+    { fetchSite: null, origin: 'https://andere-site.example' },        // via http: alleen Origin
+    { fetchSite: null, origin: 'null' },                                // afgeschermde herkomst
+    { fetchSite: null, origin: null },                                  // geen van beide: geen browser
+  ];
+  for (const headers of attempts) {
+    const response = await register(base, ANNA, headers);
+    assert.equal(response.status, 403, `verwacht 403 bij ${JSON.stringify(headers)}`);
+  }
   assert.equal(countUsers(db), 0);
+});
+
+test('formulieren van de eigen site komen door, ook als één van de headers ontbreekt', async (t) => {
+  const { db, base } = await startServer(t);
+
+  // Via https of localhost sturen browsers Sec-Fetch-Site mee; dat is genoeg.
+  const onlyFetchSite = await register(base, ANNA, { origin: null });
+  assert.equal(onlyFetchSite.status, 303);
+
+  // Via gewone http naar een andere computer is er alleen Origin.
+  const onlyOrigin = await register(base, { ...ANNA, email: 'bram@example.com' }, { fetchSite: null });
+  assert.equal(onlyOrigin.status, 303);
+
+  assert.equal(countUsers(db), 2);
 });
 
 test('registratie controleert de invoer', async (t) => {
