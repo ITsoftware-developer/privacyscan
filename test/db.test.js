@@ -29,7 +29,7 @@ test('openDatabase maakt de map, het bestand en de tabellen aan', () => {
     db.close();
 
     assert.ok(existsSync(path));
-    assert.deepEqual(tables, ['email_confirmations', 'findings', 'rate_limits', 'scans', 'sessions', 'users']);
+    assert.deepEqual(tables, ['email_confirmations', 'findings', 'rate_limits', 'scan_runs', 'scans', 'sessions', 'users']);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -104,13 +104,14 @@ test('een account verwijderen wist alles wat eraan hangt (ON DELETE CASCADE)', (
     db.prepare('INSERT INTO email_confirmations (id, user_id, expires_at) VALUES (?, ?, 1)').run(`c${id}`, id);
     db.prepare('INSERT INTO scans (user_id, kind, ran_at, found_count, new_count) VALUES (?, ?, 0, 1, 1)')
       .run(id, 'breach');
+    db.prepare("INSERT INTO scan_runs (user_id, ran_at, steps, exposure) VALUES (?, 0, '[]', '[]')").run(id);
     addFinding(db, id);
     addFinding(db, id, 'https://example.org/', 'web');
   }
 
   db.prepare('DELETE FROM users WHERE id = 1').run();
 
-  for (const table of ['sessions', 'email_confirmations', 'scans', 'findings']) {
+  for (const table of ['sessions', 'email_confirmations', 'scans', 'scan_runs', 'findings']) {
     const rows = db.prepare(`SELECT user_id FROM ${table}`).all();
     assert.ok(rows.length > 0, `${table}: de gegevens van het andere account blijven staan`);
     assert.ok(rows.every((row) => row.user_id === 2), `${table}: niets van account 1 over`);
@@ -148,4 +149,113 @@ test('inTransaction bewaart alles of niets', () => {
     addFinding(db, 1, 'A'); // bestaat al: de hele groep wordt teruggedraaid
   }), /UNIQUE/);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM findings').get().n, 2);
+});
+
+test('er is één rapport per gebruiker, en het hoort bij een bestaande gebruiker', () => {
+  const db = openDatabase(':memory:');
+  addUser(db);
+  const insert = db.prepare("INSERT INTO scan_runs (user_id, ran_at, steps, exposure) VALUES (?, 0, '[]', '[]')");
+
+  assert.throws(() => insert.run(99), /FOREIGN KEY/);
+  insert.run(1);
+  assert.throws(() => insert.run(1), /UNIQUE|PRIMARY KEY/);
+  assert.throws(() => db.prepare('INSERT INTO scan_runs (user_id, ran_at) VALUES (1, 0)').run(), /NOT NULL|UNIQUE|PRIMARY KEY/);
+});
+
+// Zo zag de tabel findings eruit voordat er bewijs bij elke bevinding hoorde (versie 0.4.0).
+const FINDINGS_BEFORE_EVIDENCE = `
+  CREATE TABLE users (
+    id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    password_hash TEXT NOT NULL, created_at INTEGER NOT NULL, email_confirmed_at INTEGER, city TEXT
+  );
+  CREATE TABLE findings (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('breach', 'web')),
+    source_key TEXT NOT NULL, title TEXT NOT NULL, url TEXT,
+    details TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'mine', 'not_mine', 'unknown')),
+    found_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+    UNIQUE (user_id, kind, source_key)
+  );
+  INSERT INTO users VALUES (1, 'Anna', 'anna@example.com', 'hash', 100, 100, NULL);
+`;
+
+test('een database van vóór het bewijs krijgt bron en datum bij elke bevinding, zonder te gokken', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'privacyscan-'));
+  try {
+    const path = join(dir, 'oud.db');
+    const old = new DatabaseSync(path);
+    old.exec(FINDINGS_BEFORE_EVIDENCE);
+    const insert = old.prepare(`INSERT INTO findings (user_id, kind, source_key, title, url, details, status, found_at, updated_at)
+                                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    insert.run('breach', 'Adobe', 'Adobe', 'https://haveibeenpwned.com/PwnedWebsites#Adobe', '{"breachDate":"2013-10-04"}', 'mine', 10, 20);
+    insert.run('breach', 'LinkedIn', 'LinkedIn', null, '{"source":"xon","breachDate":"2012-06-05"}', 'mine', 11, 21);
+    insert.run('breach', 'Kapot', 'Kapot', null, 'dit is geen json', 'mine', 12, 22);
+    insert.run('web', 'https://example.org/a', 'Een resultaat', 'https://example.org/a', '{"snippet":"x"}', 'mine', 13, 23);
+    old.close();
+
+    const db = openDatabase(path);
+    const rows = Object.fromEntries(db.prepare(
+      'SELECT source_key, source_id, confidence, confidence_note, checked_at, status, found_at, updated_at, title FROM findings',
+    ).all().map((row) => [row.source_key, row]));
+
+    // Een datalek zonder bron in zijn gegevens kwam van HIBP, de enige bron toen. Met "source" in de gegevens
+    // staat die bron er al. Kapotte gegevens gooien niets en tellen als HIBP.
+    assert.equal(rows.Adobe.source_id, 'hibp');
+    assert.equal(rows.LinkedIn.source_id, 'xon');
+    assert.equal(rows.Kapot.source_id, 'hibp');
+    for (const name of ['Adobe', 'LinkedIn', 'Kapot']) {
+      assert.equal(rows[name].confidence, 'hoog', name); // de bron zei zelf dat het adres in dit lek stond
+      assert.match(rows[name].confidence_note, /letterlijke overeenkomst/, name);
+    }
+
+    // Er bestond alleen de demo-zoekdienst. Een zekerheid is nooit beoordeeld, dus die blijft leeg.
+    assert.equal(rows['https://example.org/a'].source_id, 'demo');
+    assert.equal(rows['https://example.org/a'].confidence, null);
+    assert.equal(rows['https://example.org/a'].confidence_note, null);
+
+    // Het laatste onderzoek was het laatste moment dat we iets wisten: updated_at. Al het andere blijft staan.
+    assert.deepEqual(Object.values(rows).map((row) => [row.found_at, row.updated_at, row.checked_at]), [
+      [10, 20, 20], [11, 21, 21], [12, 22, 22], [13, 23, 23],
+    ]);
+    assert.equal(rows.Adobe.status, 'mine');
+    assert.equal(rows.Adobe.title, 'Adobe');
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM scan_runs').get().n, 0); // en de nieuwe tabel bestaat
+    db.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('de bijwerking van een oude database is eenmalig: een tweede keer openen verandert niets meer', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'privacyscan-'));
+  try {
+    const path = join(dir, 'oud.db');
+    const old = new DatabaseSync(path);
+    old.exec(FINDINGS_BEFORE_EVIDENCE);
+    old.exec(`INSERT INTO findings (user_id, kind, source_key, title, details, status, found_at, updated_at)
+              VALUES (1, 'web', 'https://example.org/a', 'A', '{}', 'new', 1, 2),
+                     (1, 'breach', 'Adobe', 'Adobe', '{}', 'mine', 1, 2)`);
+    old.close();
+
+    openDatabase(path).close();
+
+    // Daarna zijn ze door een scan opnieuw onderzocht en beoordeeld. Bij het volgende openen mag er niets terugdraaien.
+    const midden = openDatabase(path);
+    midden.exec(`UPDATE findings SET source_id = 'xon', confidence = 'laag', confidence_note = 'Nieuwe uitleg', checked_at = 999
+                 WHERE kind = 'breach'`);
+    midden.exec("UPDATE findings SET source_id = 'brave', confidence = 'laag', checked_at = 999 WHERE kind = 'web'");
+    midden.close();
+
+    const db = openDatabase(path);
+    const rows = db.prepare('SELECT kind, source_id, confidence, confidence_note, checked_at FROM findings ORDER BY kind').all();
+    assert.deepEqual(rows.map((row) => ({ ...row })), [
+      { kind: 'breach', source_id: 'xon', confidence: 'laag', confidence_note: 'Nieuwe uitleg', checked_at: 999 },
+      { kind: 'web', source_id: 'brave', confidence: 'laag', confidence_note: null, checked_at: 999 },
+    ]);
+    db.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

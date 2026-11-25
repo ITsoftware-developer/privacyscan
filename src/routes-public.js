@@ -10,13 +10,17 @@
 //
 // Wat hier juist NIET bestaat, is een zoekvak om iemand op naam op het web te zoeken.
 // Dat blijft beperkt tot je eigen account (zie routes-scan.js).
+//
+// Verder staat hier de pagina /bronnen: het bronnenregister en de roadmap. Die bevat geen
+// persoonsgegevens en laat eerlijk zien wat er werkt en wat nog niet bestaat.
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { isValidEmail, normalizeEmail } from './email.js';
+import { publicPlan, publicRun, withEvidence } from './engine.js';
 import { breachLink } from './findings.js';
 import { SqliteStore } from './limit-store.js';
 import { ScanError } from './scan-error.js';
-import { sourceById } from './sources.js';
+import { PHASES, describeRegister, sourceById } from './sources.js';
 
 const ONE_HOUR = 60 * 60 * 1000;
 const MAX_EMAIL = 254;
@@ -50,7 +54,7 @@ const TOO_OFTEN = 'Je hebt het afgelopen uur al een paar keer gecontroleerd. Pro
 
 const newestFirst = (a, b) => String(b.breachDate ?? '').localeCompare(String(a.breachDate ?? ''));
 
-export function createPublicRoutes({ db, hibp, checkLimit }) {
+export function createPublicRoutes({ db, hibp, search = null, checkLimit }) {
   const router = Router();
 
   // Naar welke bron(nen) gaan de adressen van bezoekers? Dat staat op de pagina.
@@ -60,11 +64,16 @@ export function createPublicRoutes({ db, hibp, checkLimit }) {
   // `noStore`: pagina's met een adres erin horen niet in de cache van de browser.
   function page(res, { status = 200, noStore = false, email = '', ...values } = {}) {
     if (noStore) res.set('Cache-Control', 'no-store');
+    const testMode = !hibp.hasKey; // zonder sleutel (of gratis dienst) werken alleen de testadressen van HIBP
+    const result = values.result ?? null;
     res.status(status).render('controle', {
       email: email.slice(0, MAX_EMAIL),
       error: null,
       result: null,
-      testMode: !hibp.hasKey, // zonder sleutel (of gratis dienst) werken alleen de testadressen van HIBP
+      testMode,
+      // De stappen van de Research Engine. Na een controle komt alles uit het resultaat dat de
+      // bezoeker nu ziet (en dat niet bewaard wordt); anders staat er wat er te doen is.
+      steps: result ? publicRun({ breaches: result.breaches, source: result.source }) : publicPlan({ testMode }),
       emailSources,
       wide: true,
       ...values,
@@ -93,6 +102,19 @@ export function createPublicRoutes({ db, hibp, checkLimit }) {
   router.get('/', (req, res) => {
     if (req.user) return res.redirect(303, '/dashboard');
     page(res);
+  });
+
+  // Het bronnenregister en de roadmap: wat werkt, wat staat uit en wat bestaat nog niet.
+  router.get('/bronnen', (req, res) => {
+    res.render('bronnen', {
+      register: describeRegister({
+        emailSources: hibp.emailSources ?? ['hibp'],
+        hasKey: Boolean(hibp.hasKey),
+        search,
+      }),
+      phases: PHASES,
+      wide: true,
+    });
   });
 
   // Een adres in de URL (?email=...) lezen we bewust nergens: adressen horen niet in
@@ -127,10 +149,13 @@ export function createPublicRoutes({ db, hibp, checkLimit }) {
       return problem(error.code);
     }
 
-    const visible = breaches
-      .filter((breach) => !breach.isSensitive)
-      .sort(newestFirst)
-      .map((breach) => ({ ...breach, url: breachLink(breach) }));
+    const visible = withEvidence(
+      breaches
+        .filter((breach) => !breach.isSensitive)
+        .sort(newestFirst)
+        .map((breach) => ({ ...breach, url: breachLink(breach) })),
+      { source },
+    );
     show({ result: { breaches: visible, source } });
   });
 

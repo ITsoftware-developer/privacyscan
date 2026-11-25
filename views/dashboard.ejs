@@ -9,10 +9,10 @@
   <p class="alert alert-ok notice-top" role="status"><%= notice %></p>
 <% } %>
 
-<ol class="steps" aria-label="Voortgang van het project">
-  <li class="step done"><span class="step-dot" aria-hidden="true">✓</span>Basis</li>
-  <li class="step done"><span class="step-dot" aria-hidden="true">✓</span>Zoeken</li>
-  <li class="step"><span class="step-dot">3</span>Automatisch</li>
+<ol class="steps" aria-label="Voortgang van het plan">
+  <% phases.forEach((phase) => { %>
+    <li class="step<%= phase.done ? ' done' : '' %>"><span class="step-dot" aria-hidden="true"><%= phase.done ? '✓' : phase.number %></span><%= phase.short %></li>
+  <% }) %>
 </ol>
 
 <div class="grid">
@@ -56,6 +56,41 @@
 
     <p class="card-foot"><a class="link-danger" href="/account/verwijderen">Account verwijderen</a></p>
   </article>
+
+  <article class="card card-wide" id="deep-scan">
+    <header class="card-head">
+      <h2>Deep Scan</h2>
+      <% if (run) { %>
+        <span class="badge badge-ok">Laatst gedaan op <%= formatDateTime(run.ranAt) %></span>
+      <% } else { %>
+        <span class="badge">Nog niet gedaan</span>
+      <% } %>
+    </header>
+    <% if (!confirmed) { %>
+      <p class="card-text">Bevestig eerst je e-mailadres. Daarna kun je hier alles in één keer onderzoeken.</p>
+    <% } else { %>
+      <p class="card-text">
+        Onderzoekt in één keer alle bronnen die voor jouw account beschikbaar zijn. Wat niet kon of nog
+        niet bestaat, staat in het rapport met de reden. Alles wat we vinden, krijgt een bron, een datum
+        en een zekerheid.
+      </p>
+      <form method="post" action="/scan/deep">
+        <button type="submit" class="button button-action">Start Deep Scan</button>
+      </form>
+      <% if (run) { %>
+        <p class="hint"><a href="/resultaten#rapport">Bekijk het volledige rapport</a></p>
+      <% } %>
+    <% } %>
+  </article>
+
+  <% if (run) { %>
+    <%- include('partials/engine', {
+      heading: 'Je laatste Deep Scan',
+      sub: formatDateTime(run.ranAt),
+      steps: run.steps,
+      wideCard: true,
+    }) %>
+  <% } %>
 
   <article class="card">
     <header class="card-head">

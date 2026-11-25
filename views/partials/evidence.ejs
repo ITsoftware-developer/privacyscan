@@ -1,0 +1,17 @@
+<% const origin = evidenceSource(finding.source_id); %>
+<dl class="evidence" aria-label="Bewijs bij deze bevinding">
+  <div>
+    <dt>Bron</dt>
+    <dd>
+      <% if (origin.url) { %><a href="<%= origin.url %>" target="_blank" rel="noopener noreferrer"><%= origin.name %></a><% } else { %><%= finding.source_id ? origin.name : 'niet bekend (gevonden voor deze functie bestond)' %><% } %>
+    </dd>
+  </div>
+  <div>
+    <dt>Onderzocht op</dt>
+    <dd><%= finding.checked_at ? formatDateTime(finding.checked_at) : 'onbekend' %></dd>
+  </div>
+  <div>
+    <dt>Zekerheid</dt>
+    <dd><%= confidenceLabel(finding.confidence) %><% if (finding.confidence_note) { %> <span class="evidence-note">· <%= finding.confidence_note %></span><% } %></dd>
+  </div>
+</dl>

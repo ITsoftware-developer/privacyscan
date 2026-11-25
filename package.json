@@ -1,7 +1,7 @@
 {
   "name": "privacyscan",
-  "version": "0.4.0",
-  "description": "Je eigen privacy-tool: een e-mailadres controleren op bekende datalekken, en je eigen naam opzoeken op het web. Zoekt en toont, verwijdert niets.",
+  "version": "0.5.0",
+  "description": "Je eigen privacy-tool: wat weet het internet over jou? Zoekt en toont persoonsgegevens, nu in bekende datalekken, met bron, datum en zekerheid bij elke bevinding. Verwijdert niets.",
   "private": true,
   "type": "module",
   "main": "src/server.js",

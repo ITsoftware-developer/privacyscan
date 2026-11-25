@@ -1,0 +1,81 @@
+<%- include('partials/head', { title: 'Bronnen en roadmap' }) %>
+
+<section class="welcome">
+  <h1>Bronnen en roadmap</h1>
+  <p class="lead">
+    Waar Privacyscan zijn gegevens vandaan haalt, en wat er nog niet bestaat. Alleen wat hier
+    <strong>Actief</strong> heet, werkt echt.
+  </p>
+</section>
+
+<div class="results">
+  <article class="card">
+    <h2>Zo gaan we met bevindingen om</h2>
+    <ul class="plain-list">
+      <li>
+        <strong>Niets verzonnen.</strong> Elke bevinding heeft een bron die je kunt nalopen, een datum
+        waarop we hem onderzochten en een zekerheid: hoe zeker het is dat hij over jou gaat. Bij elke
+        beoordeling staat waarom.
+      </li>
+      <li>
+        <strong>Eerlijk over wat niet kon.</strong> Was een bron niet bereikbaar, of bestaat een onderdeel
+        nog niet, dan staat dat in het rapport. We noemen nooit iets voltooid wat niet gedaan is.
+      </li>
+      <li>
+        <strong>Alleen jouw gegevens.</strong> Het onderzoek gaat over je eigen gegevens, nooit over een
+        ander. Onderzoek naar iemand anders, met diens toestemming, bestaat nog niet. Dat komt pas als die
+        toestemming echt gecontroleerd kan worden.
+      </li>
+      <li>
+        <strong>Alleen vinden.</strong> Privacyscan verwijdert niets van het internet en stuurt geen
+        verwijderverzoeken. Je eigen account bij ons kun je wel altijd wissen.
+      </li>
+    </ul>
+  </article>
+
+  <section class="card" aria-labelledby="register-heading">
+    <header class="card-head">
+      <h2 id="register-heading">Bronnenregister</h2>
+    </header>
+    <ul class="register-list">
+      <% for (const item of register) { %>
+        <% const tone = { actief: 'ok', testmodus: 'warn', demo: 'warn', uit: 'idle', gepland: 'idle' }[item.state] ?? 'idle'; %>
+        <li class="register-item">
+          <div class="register-top">
+            <span class="register-name">
+              <% if (item.url) { %><a href="<%= item.url %>" target="_blank" rel="noopener noreferrer"><%= item.name %></a><% } else { %><%= item.name %><% } %>
+            </span>
+            <span class="chip-soft"><%= item.categoryName %></span>
+            <span class="state state-<%= tone %>"><%= item.stateLabel %></span>
+          </div>
+          <p class="register-gives"><%= item.gives %></p>
+          <% if (item.note) { %><p class="register-note"><%= item.note %></p><% } %>
+        </li>
+      <% } %>
+    </ul>
+  </section>
+
+  <section class="card" aria-labelledby="roadmap-heading">
+    <header class="card-head">
+      <h2 id="roadmap-heading">Roadmap</h2>
+    </header>
+    <ol class="phases">
+      <% for (const phase of phases) { %>
+        <li class="phase<%= phase.done ? ' is-done' : '' %>">
+          <span class="step-dot" aria-hidden="true"><%= phase.done ? '✓' : phase.number %></span>
+          <div>
+            <strong>Fase <%= phase.number %> · <%= phase.name %></strong>
+            <span class="state state-<%= phase.done ? 'ok' : 'idle' %>"><%= phase.done ? 'Klaar' : 'Gepland' %></span>
+            <p><%= phase.text %></p>
+          </div>
+        </li>
+      <% } %>
+    </ol>
+    <p class="hint">
+      Gegevens verwijderen en verwijderverzoeken versturen staan bewust niet op de roadmap:
+      Privacyscan zoekt en toont.
+    </p>
+  </section>
+</div>
+
+<%- include('partials/foot') %>

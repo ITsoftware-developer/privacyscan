@@ -1,16 +1,17 @@
-// De pagina's van fase 2: het dashboard, je e-mailadres bevestigen, je
-// zoekgegevens, zoeken (in datalekken en op het web), de resultaten en het
-// testpostvak voor op je eigen computer.
+// De pagina's voor wie is ingelogd: het dashboard, je e-mailadres bevestigen, je
+// zoekgegevens, zoeken (in datalekken, op het web, of alles tegelijk met de Deep Scan), de
+// resultaten en het testpostvak voor op je eigen computer.
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { requireLogin } from './auth.js';
 import { CONFIRM_MINUTES, confirmEmail, isConfirmationValid } from './confirm.js';
 import {
-  WEB_CHOICES, countFindings, lastScan, listFindings, setWebStatus,
+  WEB_CHOICES, countFindings, lastRun, lastScan, listFindings, setWebStatus,
 } from './findings.js';
 import { SqliteStore } from './limit-store.js';
 import { hasOwnerAddress, isOwner } from './owner.js';
 import { ScanError } from './scan-error.js';
+import { runDeepScan } from './scanner.js';
 import { scanBreaches, scanWeb } from './scans.js';
 import { parseCity } from './search.js';
 import { sourceById } from './sources.js';
@@ -131,6 +132,7 @@ export function createScanRoutes({
       choices: WEB_CHOICES,
       breachScan: lastScan(db, req.user.id, 'breach'),
       webScan: lastScan(db, req.user.id, 'web'),
+      run: lastRun(db, req.user.id),
       searchIsDemo: Boolean(search.isDemo),
       checkSource: sourceOf(req.user),
       sourceById,
@@ -149,6 +151,12 @@ export function createScanRoutes({
   // De melding na een geslaagde scan, uit de gegevens van die scan.
   function scanNotice(user, query) {
     const userId = user.id;
+    if (query.gescand === 'deep') {
+      const run = lastRun(db, userId);
+      if (!run) return null;
+      const done = run.steps.filter((step) => step.status === 'done').length;
+      return `Deep Scan klaar: ${done} van ${run.steps.length} stappen voltooid. Bij elke stap staat wat er gedaan is, en waarom iets niet kon.`;
+    }
     if (query.gescand === 'datalekken') {
       const scan = lastScan(db, userId, 'breach');
       if (!scan) return null;
@@ -185,6 +193,7 @@ export function createScanRoutes({
       checkSource: sourceOf(req.user),
       breachScan: lastScan(db, req.user.id, 'breach'),
       webScan: lastScan(db, req.user.id, 'web'),
+      run: lastRun(db, req.user.id),
       searchAllowed: canSearchByName(req.user),
       ownerMode: production && isOwner(req.user, ownerEmail),
       // De beheerder die nog niet bevestigd heeft, krijgt de uitnodiging om dat te doen
@@ -254,6 +263,18 @@ export function createScanRoutes({
   });
 
   // --- Zoeken ----------------------------------------------------------------
+
+  // De Deep Scan: alle stappen achter elkaar, op de gegevens van dit account. Net als de
+  // losse scans heeft hij geen invoer. Een stap die niet lukt, komt als stap in het rapport;
+  // hij stopt de rest niet. Hij vraagt één keer aan de bron van datalekken en één keer aan de
+  // zoekdienst, dus hij telt voor allebei mee in de limieten: zo kun je de aanvragen die de
+  // bronnen ons toestaan niet verdubbelen door de Deep Scan naast de losse knoppen te gebruiken.
+  router.post('/scan/deep', requireLogin, requireConfirmed, breachLimiter, webLimiter, async (req, res) => {
+    await runDeepScan({
+      db, user: req.user, hibp, search, allowWeb: canSearchByName(req.user),
+    });
+    res.redirect(303, '/resultaten?gescand=deep#rapport');
+  });
 
   // Het formulier heeft geen invoervelden: er wordt altijd gezocht naar het
   // e-mailadres van het ingelogde account. Ook als iemand zelf een veld meestuurt,

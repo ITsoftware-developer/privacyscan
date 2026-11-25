@@ -8,14 +8,16 @@ import { checkOrigin, loadUser } from './auth.js';
 import { CONFIRM_MINUTES, sendConfirmationMail } from './confirm.js';
 import { createHibp } from './hibp.js';
 import { createMailer } from './mail.js';
+import { confidenceLabel } from './confidence.js';
 import { dataClassLabel } from './data-classes.js';
+import { describeStep } from './engine.js';
 import { parseOwnerEmail } from './owner.js';
 import { isPwned } from './pwned.js';
 import { createRoutes } from './routes.js';
 import { createPublicRoutes } from './routes-public.js';
 import { createScanRoutes } from './routes-scan.js';
 import { createSearch } from './search.js';
-import { sourceById, sourceHost } from './sources.js';
+import { PHASES, evidenceSource, sourceById, sourceHost } from './sources.js';
 
 const ROOT = join(import.meta.dirname, '..');
 
@@ -27,7 +29,7 @@ export function createApp({
   accountLimit = 5,     // mislukte inlogpogingen per kwartier per account
   registerLimit = 10,   // aanmeldingen per uur per IP-adres
   resendLimit = 3,      // nieuwe bevestigingsmails per uur per account
-  scanLimit = 5,        // zoekopdrachten per uur per account (voor elke soort apart)
+  scanLimit = 5,        // zoekopdrachten per uur per account (datalekken en web apart; de Deep Scan telt voor allebei)
   checkLimit = 10,      // controles van een e-mailadres per uur per IP-adres (de openbare pagina)
   hibp = createHibp(),  // de bron van datalekken: Have I Been Pwned (zie server.js voor de gratis XposedOrNot); de tests vervangen deze door een nepversie
   search = createSearch(), // zoekdienst voor je naam; standaard de demo met nepdata
@@ -57,6 +59,11 @@ export function createApp({
   app.locals.formatDay = (day) => new Date(`${day}T00:00:00Z`)
     .toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
   app.locals.dataClassLabel = dataClassLabel;
+  // Voor het rapport van de Deep Scan en het bewijs bij elke bevinding.
+  app.locals.describeStep = describeStep;
+  app.locals.confidenceLabel = confidenceLabel;
+  app.locals.evidenceSource = evidenceSource;
+  app.locals.phases = PHASES;
   // Voor de privacyverklaring: naar welke dienst gaan de e-mailadressen? (Have I Been Pwned,
   // of de gratis XposedOrNot als de site geen HIBP-sleutel heeft.)
   app.locals.breachSources = (hibp.emailSources ?? ['hibp']).map(sourceById);
@@ -83,7 +90,7 @@ export function createApp({
   app.use(checkOrigin);
   app.use(loadUser(db));
   const sendConfirmation = (user) => sendConfirmationMail({ db, mailer, baseUrl, user });
-  app.use(createPublicRoutes({ db, hibp, checkLimit }));
+  app.use(createPublicRoutes({ db, hibp, search, checkLimit }));
   app.use(createRoutes({
     db, production, pwnedCheck, loginLimit, accountLimit, registerLimit, sendConfirmation,
   }));

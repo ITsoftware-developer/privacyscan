@@ -1,30 +1,60 @@
-# Privacyscan: datalekken controleren en je eigen gegevens opzoeken
+# Privacyscan: wat weet het internet over jou?
 
-Je eigen privacy-tool, stap voor stap gebouwd. De app **zoekt en toont**; hij verwijdert niets
-en stuurt geen verzoeken naar anderen.
+Privacyscan **zoekt persoonsgegevens op, toont ze en zegt waar het ze vond**: in bekende datalekken, en
+straks ook bij databrokers, op openbare webpagina's en in openbare documenten. De app **verwijdert niets
+van het internet** en **stuurt geen verwijderverzoeken**. Dat is een bewuste keuze en geen ontbrekende
+functie: Privacyscan vindt en laat zien, wat je daarna doet bepaal je zelf.
 
-- **Fase 1** (klaar): een account maken, inloggen, uitloggen, je account verwijderen en een dashboard.
-- **Fase 2** (klaar): je e-mailadres bevestigen, kijken of dat adres in een bekend **datalek** staat
-  (Have I Been Pwned), en **op het web zoeken naar je eigen naam**. Per resultaat kies je:
-  *Dit ben ik*, *Dit ben ik niet* of *Weet ik niet*, zodat je overzicht houdt tussen naamgenoten.
-- **Openbare e-mailcontrole**: op de startpagina kan iedereen een e-mailadres controleren,
-  zonder account, zoals bij Have I Been Pwned zelf. Je ziet alleen in welke bekende lekken het adres
-  zat, en het adres wordt nergens bewaard. **Werkt voor echte adressen, gratis, via XposedOrNot**
-  (of via Have I Been Pwned als je daar een sleutel voor hebt).
-- Nog te doen: een echte zoekdienst voor het web, een wachtwoordcontrole-pagina, en automatisch
-  opnieuw zoeken met een mail (zie "Volgende stappen"). Verwijderverzoeken zijn bewust geschrapt.
+> **De app verzint niets.** Elke bevinding heeft een bron die je zelf kunt nalopen, een datum waarop het
+> onderzocht is en een zekerheid, met de reden erbij. En het rapport zegt ook welke bronnen niet
+> toegankelijk of nog niet gebouwd waren, in plaats van te doen alsof alles gelukt is.
 
-**Uitgangspunten:** test alleen op jezelf en op nepdata, zoek alleen naar je eigen naam, en laat
-foto's zoeken en gezichtsherkenning weg. De openbare controle laat alleen zien *in welk lek* een
-adres zat, nooit de gelekte gegevens, en is geen manier om mensen op naam op te zoeken.
+## Wat kan het, en wat niet?
+
+Alleen wat hier **Werkt** heet, doet de app echt. De pagina `/bronnen` in de app toont dezelfde stand van
+zaken, afgestemd op jouw instellingen.
+
+| Onderdeel | Stand | Toelichting |
+|---|---|---|
+| Datalekken van een e-mailadres opsporen | **Werkt** | Twee bronnen: XposedOrNot (gratis) en Have I Been Pwned (met sleutel). Per lek: de naam, de datum, het aantal accounts en de soorten gegevens die gelekt zijn. |
+| Blootstelling van persoonsgegevens | **Werkt** | Uit de gevonden lekken: welke *soorten* gegevens zijn blootgesteld (inloggegevens, telefoonnummers, adressen, identiteit, betaalgegevens, online activiteit), met een korte raad. Nooit de gegevens zelf. |
+| Gelekte inloggegevens signaleren | Deels | Je ziet dat wachtwoorden of gebruikersnamen in een lek zaten, niet welke. Een wachtwoord laten nakijken kan nu alleen bij het maken van een account; een eigen pagina daarvoor staat gepland. |
+| Telefoonnummers en adressen | Deels | Alleen als soort gegevens in een datalek. Zoeken op het open web kan pas met een echte zoekdienst. |
+| Openbare webpagina's, socialemediavermeldingen en openbare documenten | Demo | Zoeken op je eigen naam werkt, maar met verzonnen resultaten: er is nog geen echte zoekdienst gekoppeld. |
+| Databrokers | Gepland | Fase 3. Alleen via toegestane bronnen. |
+| Darkweb via geautoriseerde bronnen | Gepland | Alleen via een aanbieder die dit legaal levert. Geen eigen crawler. |
+| Zelfstandig onderzoek door een AI-agent | Gepland | Fase 5. |
+| Doorlopende monitoring | Gepland | Fase 6. |
+| Gegevens van het internet verwijderen | Bewust niet | De app zoekt en toont. |
+| Verwijderverzoeken versturen | Bewust niet | Idem. Je eigen account bij Privacyscan wissen kan wel altijd. |
+
+### De zes fases
+
+| Fase | Onderdeel | Stand |
+|---|---|---|
+| 1 | Veilig fundament: account, inloggen, e-mail bevestigen, database, dashboard | Klaar |
+| 2 | Breach Intelligence Engine: datalekken en blootstelling, met twee bronnen | Klaar (darkweb volgt zodra er een geautoriseerde aanbieder is) |
+| 3 | Data Broker Engine | Nog niet gebouwd |
+| 4 | Deep Research Engine: openbare internetbronnen en documenten | Begonnen: de Deep Scan en de demo bestaan, een echte zoekdienst nog niet |
+| 5 | Eigen AI-agent | Nog niet gebouwd |
+| 6 | Continuous Monitoring | Nog niet gebouwd |
+
+Een fase heet pas klaar als alles erin echt werkt. De pagina `/bronnen` en het dashboard tonen dezelfde stand.
+
+**Uitgangspunten:** zoek alleen naar jezelf (je eigen, bevestigde e-mailadres en je eigen naam), test op
+nepdata, en laat foto's zoeken en gezichtsherkenning weg. De openbare controle laat alleen zien *in welk
+lek* een adres zat, nooit de gelekte gegevens, en is geen manier om mensen op naam op te zoeken.
+Onderzoek naar iemand anders, ook met toestemming, bestaat nog niet (zie "Bewust (nog) niet gedaan").
 
 ## Wat heb je nodig
 
 - **Node.js 22.13 of nieuwer.** Download de LTS-versie via [nodejs.org](https://nodejs.org).
 - Verder niets: de database (SQLite) zit al in Node.js ingebouwd, en mails komen standaard in een
   testpostvak in de app zelf.
-- Echte e-mailadressen controleren werkt direct, zonder sleutel, via de gratis dienst
-  [XposedOrNot](https://xposedornot.com) (25 controles per uur, voor persoonlijk gebruik).
+- Echte e-mailadressen controleren kan zonder sleutel, via de gratis dienst
+  [XposedOrNot](https://xposedornot.com) (25 controles per uur, voor persoonlijk gebruik). Die koppeling
+  is gebouwd naar hun gepubliceerde beschrijving en getest met nagebootste antwoorden, maar nog niet
+  tegen de echte dienst geprobeerd: zie "Waar de gegevens vandaan komen".
 - Later, als je meer wilt: een [HIBP-sleutel](https://haveibeenpwned.com/API/Key) (betaald) en
   eventueel Mailpit (een nep-mailserver).
 
@@ -39,19 +69,23 @@ npm start
 
 Ga daarna naar **http://localhost:3000**.
 
-Kom je uit fase 1? Draai dan eerst `npm install` (er is een pakket bijgekomen: `nodemailer`).
-De database wordt bij het starten vanzelf bijgewerkt; je account en gegevens blijven staan.
+Kom je uit een eerdere versie? Dan hoeft er niets te gebeuren: in 0.5.0 zijn er geen nieuwe pakketten
+bijgekomen. De database wordt bij het starten vanzelf bijgewerkt en je account en gegevens blijven staan.
+Bevindingen van vroeger krijgen daarbij alsnog hun bron en datum. Een webresultaat van vroeger
+was nooit beoordeeld, en de app toont dat ook zo ("Niet beoordeeld").
 
 ### Proberen met nepdata (begin hier)
 
 **De openbare controle (zonder account).** Ga naar http://localhost:3000, typ een e-mailadres en
-klik op *Controleer*. Op je eigen computer werken **echte adressen** direct, zonder sleutel: de app
-vraagt het aan de gratis dienst XposedOrNot (zie "Waar de gegevens vandaan komen"). Wil je liever
-testen met nepdata? Typ dan **`multiple-breaches@hibp-integration-tests.com`**: dat is een testadres
-van Have I Been Pwned en geeft drie (verzonnen) lekken. Probeer ook
-`account-exists@hibp-integration-tests.com` (één lek) en `not-active-breach@hibp-integration-tests.com`
-(geen lek, dus "goed nieuws"). Zet je de gratis dienst uit (`FREE_BREACH_CHECK=off`) en heb je geen
-HIBP-sleutel, dan werken alleen die testadressen en zegt de pagina dat eerlijk ("Testmodus").
+klik op *Start Deep Scan*. Op de startpagina draait dat alleen de datalekcontrole (stap 1); de andere
+stappen staan er zoals ze zijn: wat zonder account niet kan, staat er als overgeslagen of als nog
+niet gebouwd. Echte adressen gaan naar de gratis dienst XposedOrNot, of naar Have I Been Pwned als je
+daar een sleutel voor hebt. Wil je liever testen met nepdata? Typ dan
+**`multiple-breaches@hibp-integration-tests.com`**: dat is een testadres van Have I Been Pwned en geeft
+drie (verzonnen) lekken. Probeer ook `account-exists@hibp-integration-tests.com` (één lek) en
+`not-active-breach@hibp-integration-tests.com` (geen lek, dus "goed nieuws"). Zet je de gratis dienst
+uit (`FREE_BREACH_CHECK=off`) en heb je geen HIBP-sleutel, dan werken alleen die testadressen en
+zegt de pagina dat eerlijk ("Testmodus").
 
 **Met een account.**
 
@@ -63,10 +97,12 @@ HIBP-sleutel, dan werken alleen die testadressen en zegt de pagina dat eerlijk (
 2. De bevestigingsmail komt in het **testpostvak**: http://localhost:3000/dev/mails (alleen
    bereikbaar vanaf je eigen computer). Open de mail, klik op de link en dan op de knop
    "Ja, dit is mijn e-mailadres".
-3. Op je dashboard: **Zoek in datalekken**. Bekijk de resultaten, met bronvermelding.
-4. Vul eventueel een woonplaats in ("Woonplaats toevoegen" op het dashboard) en kies
-   **Zoek op het web**. Dat is voorlopig een **demo**: vijf verzonnen resultaten op
-   `example.org/net/com`, er gaat niets naar buiten. Kies per resultaat of het jou is.
+3. Op je dashboard: **Start Deep Scan**. De scanner loopt alle stappen af en je krijgt een rapport
+   met per stap een status, de bronnen, de blootgestelde soorten gegevens en bij elke bevinding de
+   bron, de datum en de zekerheid. Je kunt ook per bron zoeken: **Zoek in datalekken** en **Zoek op het web**.
+4. Vul eventueel een woonplaats in ("Woonplaats toevoegen" op het dashboard). Het webonderzoek is
+   voorlopig een **demo**: vijf verzonnen resultaten op `example.org/net/com`, er gaat niets naar
+   buiten, en het rapport zegt dat ook ("Voltooid (demo)"). Kies per resultaat of het jou is.
 
 Met een betaalde `HIBP_API_KEY` gaat elk adres naar Have I Been Pwned in plaats van naar XposedOrNot.
 Is er geen bron beschikbaar voor een adres, dan zegt de app dat eerlijk in plaats van iets te verzinnen.
@@ -104,7 +140,7 @@ Zet ze in een bestand `.env`: kopieer `.env.example` naar `.env` en pas het aan.
 |-------------------------|-------------------------------------------------------------------|
 | `npm start`             | Start de site                                                     |
 | `npm run dev`           | Start de site en herstart automatisch als je een bestand wijzigt  |
-| `npm test`              | Draait alle tests (240 stuks, een paar seconden)                  |
+| `npm test`              | Draait alle tests (341 stuks, een paar seconden)                  |
 | `npm run test:coverage` | Draait de tests en laat zien welke regels code ze niet raken      |
 
 Alle gegevens staan in `data/privacyscan.db`. Gooi je die map weg, dan begin je opnieuw.
@@ -115,9 +151,9 @@ Alle gegevens staan in `data/privacyscan.db`. Gooi je die map weg, dan begin je 
 src/
   server.js         start de webserver en leest de instellingen
   app.js            bouwt de app op: beveiligingsheaders, cookies, routes
-  routes-public.js  de startpagina en de openbare e-mailcontrole (zonder account)
+  routes-public.js  de startpagina, de openbare e-mailcontrole (zonder account) en de pagina /bronnen
   routes.js         de pagina's van fase 1: registreren, inloggen, account verwijderen, privacy
-  routes-scan.js    de pagina's van fase 2: dashboard, bevestigen, zoekgegevens, zoeken, resultaten
+  routes-scan.js    de pagina's met account: dashboard, bevestigen, zoekgegevens, zoeken, de Deep Scan, resultaten
   auth.js           wachtwoorden hashen, sessies en de CSRF-check
   confirm.js        e-mailadres bevestigen: tokens, geldigheid en de bevestigingsmail
   email.js          de regels voor e-mailadressen (netjes maken, controleren), op één plek
@@ -126,17 +162,23 @@ src/
   hibp.js           praat met Have I Been Pwned (datalekken van een e-mailadres)
   xon.js            praat met XposedOrNot, de gratis bron (zonder sleutel, met een lage limiet)
   breach-check.js   kiest per adres welke van die twee bronnen zoekt, en leest FREE_BREACH_CHECK
-  sources.js        de namen en websites van de bronnen, voor de bronvermelding
+  sources.js        de bronnen van datalekken, het bronnenregister en de zes fases
+  confidence.js     hoe zeker is een bevinding? De regels, met bij elke beoordeling de reden
+  engine.js         de onderdelen van de Deep Scan: stappen en statussen, blootstelling, verificatie
+  scanner.js        de Deep Scan zelf: voert de stappen uit en bewaart het rapport
   data-classes.js   Nederlandse namen voor de soorten gelekte gegevens ("Passwords" wordt "Wachtwoorden")
   search.js         de zoekopdracht opbouwen, resultaten opschonen, de demo-zoekdienst
   scans.js          het eigenlijke zoeken: vraag het aan een dienst, bewaar wat terugkomt
-  findings.js       resultaten en je keuzes bewaren en lezen
+  findings.js       resultaten (met bron, datum en zekerheid) en je keuzes bewaren en lezen
   scan-error.js     de fouten die een scan kan geven, zonder technische details
   text.js           tekst van buiten (HTML eruit halen, inkorten)
   limit-store.js    bewaart de tellers tegen misbruik in de database
   pwned.js          checkt of een wachtwoord in een bekend datalek staat
   db.js             de database, de tabellen en het bijwerken van oudere databases
 views/              de pagina's (HTML met EJS)
+  bronnen.ejs             het bronnenregister en de roadmap
+  partials/engine.ejs     het paneel "Research Engine" met de vijf stappen
+  partials/evidence.ejs   de bron, datum en zekerheid bij een bevinding
 public/             de vormgeving (CSS)
 test/               de tests
 .github/workflows/  laat GitHub de tests draaien bij elke push
@@ -144,6 +186,54 @@ test/               de tests
 ```
 
 ## Hoe het zoeken werkt
+
+**De Deep Scan.** Op het dashboard staat **Start Deep Scan**. Eén klik laat de scanner vijf stappen
+doorlopen, in deze volgorde:
+
+1. *Datalekdatabases onderzoeken.* Een echte controle van het bevestigde e-mailadres van je account,
+   bij XposedOrNot of Have I Been Pwned.
+2. *Databrokers controleren.* Nog niet gebouwd, en dat staat er ook zo in het rapport.
+3. *Openbare internetbronnen onderzoeken.* Een zoekopdracht op je eigen naam (en woonplaats). Nu is dat
+   de demo; online mag alleen de beheerder op naam zoeken.
+4. *Blootstelling van persoonsgegevens controleren.* Rekenwerk op de gevonden lekken: welke soorten
+   gegevens zijn blootgesteld, met een korte raad. Nooit de gegevens zelf, want die hebben we niet.
+5. *Bevindingen verifiëren.* Heeft elke bevinding een bron, een datum en een zekerheid? Dit controleert
+   onze eigen bewijsvoering. Of de bron zelf gelijk heeft, kun jij alleen nagaan door de link te openen.
+
+Elke stap eindigt in één van deze toestanden, en dat staat altijd als tekst bij (kleur is nooit het enige):
+
+| Status | Wat het betekent |
+|---|---|
+| Voltooid | De stap is gelopen. Bij de demo-zoekdienst staat er "Voltooid (demo)". |
+| Niet toegankelijk | De bron bestaat, maar we kwamen er niet bij: een storing, een bereikte limiet of een geweigerde sleutel. |
+| Niet beschikbaar | Er is geen bron ingesteld, bijvoorbeeld geen HIBP-sleutel en de gratis dienst staat uit. |
+| Overgeslagen | Het mag of kan nu niet, bijvoorbeeld zoeken op naam op een openbare site. |
+| Nog niet gebouwd | De stap bestaat nog niet. |
+| Mislukt | Er ging iets mis in de scanner zelf. In het rapport staat alleen een korte vaste tekst; in de terminal staan de soort fout en de eerste regel van de melding. |
+
+Eén stap die niet lukt, stopt de rest niet, en een stap die niet gelopen is, krijgt nooit de status
+"Voltooid". Het rapport van je laatste Deep Scan blijft bewaard en staat op het dashboard en bij je
+resultaten. De Deep Scan telt voor de limiet als één datalekcontrole én één webzoekopdracht.
+
+**Bewijs bij elke bevinding.** Elke bevinding heeft drie dingen die je kunt nalopen:
+
+- **Een bron:** welke datalekbron of zoekdienst het gaf, met een link naar de bron.
+- **Een datum:** wanneer het is onderzocht. Dat is een andere datum dan het moment waarop jij "Dit ben ik"
+  koos.
+- **Een zekerheid, met de reden erbij.** Bij een datalek is dat *Hoog*, want de bron zegt zelf dat het
+  adres erin staat. Een webresultaat beoordeelt de app met vaste regels, alleen op de titel en het
+  fragment dat de zoekdienst gaf (de pagina zelf lezen we niet): staan je volledige naam én je
+  woonplaats erin, dan is het *Hoog*; alleen je volledige naam, dan *Gemiddeld*; anders *Laag*. Een
+  demo-resultaat heet *Demo (verzonnen)*.
+
+Zekerheid is geen bewijs: ook bij *Hoog* kan een naamgenoot in dezelfde plaats wonen. Daarom blijft het
+oordeel "Dit ben ik" altijd aan jou.
+
+**Het bronnenregister (`/bronnen`).** Eén pagina die laat zien welke bronnen de scanner gebruikt of gaat
+gebruiken (datalekken, gelekte wachtwoorden, webzoekdienst, databrokers, sociale media, openbare
+documenten, darkweb), met per bron de stand: *Actief*, *Alleen testadressen*, *Demo (nepdata)*, *Uit* of
+*Gepland*. Het register verzint niets: een bron die niet bestaat, staat er als "Gepland" en nooit als
+"Actief". De pagina toont ook de zes fases.
 
 **E-mailadres bevestigen.** Na het registreren krijg je een mail met een link. De link brengt je naar
 een pagina met een knop, en pas die knop bevestigt. Zo niet, dan zou een mailprogramma dat links
@@ -179,6 +269,10 @@ er in de terminal wat er mis was. Dat is bewust: "geen lek gevonden" zeggen terw
 kunnen controleren, zou een leugen zijn. De limiet van de gratis dienst geldt voor de hele site
 samen, dus bij een 429 zegt de app dat de grens bereikt is.
 
+**Let op:** de koppeling met XposedOrNot is gebouwd naar hun gepubliceerde beschrijving en getest met
+nagebootste antwoorden, maar nog niet tegen de echte dienst geprobeerd. Probeer hem eens met je eigen
+adres. Gaat er iets mis, dan toont de pagina een korte melding en staat in de terminal wat er was.
+
 **Datalekken (dashboard).** Vanaf het dashboard gaat alleen het bevestigde adres van je eigen account
 naar de bron. Er is op het dashboard geen veld waarin je een ander adres kunt typen, en een
 adres dat je zelf meestuurt wordt genegeerd. (Een ander adres controleren kan op de openbare pagina,
@@ -193,13 +287,16 @@ intypen, ook zonder account en ook het adres van iemand anders. Dat doet Have I 
 en het is verantwoord omdat het antwoord klein blijft:
 
 - Je ziet alleen de **naam** van elk lek, de datum, het aantal accounts en welke **soorten** gegevens
-  er gelekt zijn. Nooit de gegevens zelf, en niets over wie achter het adres zit.
+  er gelekt zijn, met bij elk lek de bron, de datum van de controle en de zekerheid. Nooit de gegevens
+  zelf, en niets over wie achter het adres zit.
 - **Gevoelige lekken** (zoals die van datingsites) tonen we nooit. HIBP houdt ze zelf al uit dit
   antwoord; wij filteren er voor de zekerheid ook op. Bij XposedOrNot filteren we op hun vlaggen
   `sensitive` en `searchable` (zie hierboven).
 - Het adres wordt **nergens bewaard**: niet in de database, niet in een logboek, niet in de URL (het
   formulier gebruikt POST, een `?email=` in de adresbalk wordt genegeerd) en niet in de cache van de
   browser (`Cache-Control: no-store`). Er blijft alleen een teller over met een hash van het IP-adres.
+  Ook het "Research Engine"-paneel op die pagina wordt berekend uit wat je op dat moment ziet, en niets
+  daarvan wordt bewaard.
 - Er is **geen zoekvak voor namen**. Zoeken op het web blijft beperkt tot je eigen account (zie boven).
 
 Per IP-adres zijn er maximaal 10 controles per uur (`checkLimit` in `app.js`), dus één bezoeker kan de
@@ -223,8 +320,9 @@ Met `OWNER_EMAIL` wijs je één account aan dat het wel mag: het account met pre
 (hoofdletters maken niet uit), mits dat adres bevestigd is. Een bijna gelijk adres, zoals
 `anna+x@example.com`, telt niet, en een account dat nog niet bevestigd is ook niet. Dit is
 **vertrouwen en geen bewijs**: de site gelooft dat de naam op dat account de jouwe is. Voor andere
-gebruikers blijft alles uit, en hun naam gaat nooit naar een zoekdienst. Op je eigen computer
-(zonder `production`) maakt de instelling niets uit: wie erbij kan, mag zoeken.
+gebruikers blijft alles uit, en hun naam gaat nooit naar een zoekdienst. In de Deep Scan staat die
+stap dan als "Overgeslagen", met de reden erbij. Op je eigen computer (zonder `production`) maakt de
+instelling niets uit: wie erbij kan, mag zoeken.
 
 **Jij beslist.** Bij elk webresultaat kies je *Dit ben ik*, *Dit ben ik niet* of *Weet ik niet*. Veel
 resultaten zijn van naamgenoten. De app raadt niets, ook niet "op de gok". Je keuze blijft staan als
@@ -244,9 +342,9 @@ je opnieuw zoekt, en de volgorde verandert er niet door.
 - **CSRF:** de app laat alleen formulieren van de eigen site door. Hij kijkt eerst
   naar `Sec-Fetch-Site`, en als die ontbreekt naar `Origin`. Ontbreken ze allebei,
   dan is het geen moderne browser en wordt het verzoek geweigerd. Dat geldt ook voor
-  zoeken en voor je keuze bij een resultaat.
-- **Alleen van jezelf:** elk resultaat hoort bij één account. Een id van iemand anders (of van een
-  datalek) kun je niet beoordelen, en je ziet alleen je eigen resultaten.
+  zoeken, voor de Deep Scan en voor je keuze bij een resultaat.
+- **Alleen van jezelf:** elk resultaat en elk rapport hoort bij één account. Een id van iemand anders (of
+  van een datalek) kun je niet beoordelen, en je ziet alleen je eigen resultaten.
 - **Openbare controle:** formulieren van andere websites worden geweigerd (CSRF), zodat andere sites
   jouw aanvragen bij HIBP of XposedOrNot niet kunnen gebruiken. Fouten van de bron geven een korte
   vaste melding zonder woorden als `.env`; wat de beheerder moet weten (bijvoorbeeld een geweigerde
@@ -255,16 +353,17 @@ je opnieuw zoekt, en de volgorde verandert er niet door.
   `https`-link is.
 - **Wachtwoorden raden en misbruik:** na 10 mislukte inlogpogingen per IP-adres, of 5 per
   account, volgt een pauze van een kwartier. Nieuwe bevestigingsmails (3 per uur) en
-  zoekopdrachten (5 per uur, voor datalekken en web elk apart) hebben een eigen grens per account.
-  De openbare controle heeft er een per IP-adres (10 per uur).
+  zoekopdrachten (5 per uur, voor datalekken en web elk apart; de Deep Scan telt voor allebei)
+  hebben een eigen grens per account. De openbare controle heeft er een per IP-adres (10 per uur).
   De tellers staan gehasht in de database, dus een herstart zet ze niet op nul. Keerzijde: wie je
   e-mailadres kent, kan je account zo een kwartier blokkeren; daarom duurt de pauze niet langer.
 - **Geen hints voor aanvallers:** bij een fout e-mailadres en een fout wachtwoord zie
   je dezelfde melding, en het antwoord duurt even lang.
 - **Links in mails** worden gemaakt van `BASE_URL` en nooit van de `Host`-header van een verzoek. Anders
   kan iemand met een verzonnen header een mail laten versturen met een link naar zijn eigen site.
-- **Meldingen zonder details:** een fout van Have I Been Pwned of een zoekdienst laat je alleen een
-  korte, vaste tekst zien. Sleutels en technische berichten komen nergens op een pagina.
+- **Meldingen zonder details:** een fout van Have I Been Pwned, XposedOrNot of een zoekdienst laat je
+  alleen een korte, vaste tekst zien, ook in het rapport van de Deep Scan. Sleutels en technische
+  berichten komen nergens op een pagina.
 - **Helmet** zet veilige HTTP-headers, zoals een Content-Security-Policy.
 - De server is standaard **alleen bereikbaar vanaf je eigen computer**, en het testpostvak
   (`/dev/mails`) bestaat alleen buiten `production` en alleen voor verzoeken van die computer zelf.
@@ -273,16 +372,21 @@ je opnieuw zoekt, en de volgorde verandert er niet door.
 
 - Gebruikers kunnen **hun account verwijderen** via het dashboard. Dat wist hun naam,
   e-mailadres, woonplaats, wachtwoord-hash, sessies, bevestigingslinks, gevonden datalekken en
-  webresultaten, hun keuzes en hun scans in één keer. Dat werkt omdat elke tabel met
-  gebruikersgegevens `ON DELETE CASCADE` heeft. Geef nieuwe tabellen dat ook, dan blijft het zo.
+  webresultaten, hun keuzes, hun scans en het rapport van hun laatste Deep Scan in één keer. Dat werkt
+  omdat elke tabel met gebruikersgegevens `ON DELETE CASCADE` heeft. Geef nieuwe tabellen dat ook, dan
+  blijft het zo. (Dit is het enige wat de app verwijdert: je eigen gegevens bij Privacyscan, op jouw verzoek.)
+- Het **rapport van de Deep Scan** bewaart per stap een status en een korte tekst, en per soort
+  blootgestelde gegevens de namen van de lekken. Geen gelekte gegevens, want die hebben we nooit. Er
+  wordt alleen het laatste rapport bewaard.
 - De **privacyverklaring** staat op `/privacy`. Vul `CONTACT_NAME` en `CONTACT_EMAIL`
   in je `.env` in voordat je de site online zet. De tekst past zich aan op de instellingen:
   met `production` staat er dat zoeken op naam uit staat (of dat alleen de beheerder zoekt, als je
   `OWNER_EMAIL` hebt ingesteld), bij de demo dat er niets naar buiten gaat, en met een echte
   zoekdienst staat er welke dienst de naam krijgt. Ook de openbare controle staat erin: dat het
-  adres naar HIBP gaat en niet bewaard wordt. Werk hem bij zodra de app meer gegevens verwerkt,
-  bijvoorbeeld bij automatisch opnieuw zoeken. De tekst over de wettelijke grondslag is een
-  concept: laat hem controleren voordat je de site openbaar maakt.
+  adres naar HIBP of XposedOrNot gaat en niet bewaard wordt, en dat bij elke bevinding de bron, de
+  datum en de zekerheid staan. Werk hem bij zodra de app meer gegevens verwerkt, bijvoorbeeld bij
+  automatisch opnieuw zoeken. De tekst over de wettelijke grondslag is een concept: laat hem
+  controleren voordat je de site openbaar maakt.
 - De **openbare e-mailcontrole** bewaart niets over het adres dat iemand intypt: niet in de
   database, niet in een logboek en niet in de URL. Het adres gaat wel naar de bron (Have I Been Pwned
   of XposedOrNot, anders is er niets om te controleren), en de privacyverklaring noemt de bron die
@@ -291,6 +395,12 @@ je opnieuw zoekt, en de volgorde verandert er niet door.
 
 ## Bewust (nog) niet gedaan
 
+- **Gegevens van het internet verwijderen en verwijderverzoeken sturen (AVG, artikel 17).** Dit is geen
+  ontbrekende functie maar een uitgangspunt: de app zoekt en toont. Hij verwijdert niets bij anderen en
+  stuurt geen verzoeken. Alleen je eigen account bij Privacyscan kun je wissen (zie "Privacy").
+- **Onderzoek naar iemand anders, ook met toestemming.** Dat bestaat niet. De app zoekt alleen op het
+  bevestigde adres en de naam van je eigen account. Onderzoek met toestemming van een ander kan pas als
+  die toestemming echt gecontroleerd kan worden, met een identiteitscheck van beiden.
 - **Een identiteitscheck.** Een bevestigd e-mailadres bewijst niet dat de naam in het account van
   jou is: de naam typ je zelf in bij het registreren, en hij is nu niet te wijzigen. Op je eigen
   computer is dat jouw verantwoordelijkheid (zoek alleen naar jezelf). Op een openbare site is het
@@ -299,10 +409,19 @@ je opnieuw zoekt, en de volgorde verandert er niet door.
   voor de beheerder (`OWNER_EMAIL`, zie "Later online zetten"). Voor iedereen aanzetten kan pas
   met een echte controle, zoals iDIN of een ID-scan met selfie.
 - **Een echte zoekdienst.** Er is alleen de demo. Lees voor je er een koppelt eerst hun voorwaarden:
-  sommige verbieden het bewaren van resultaten (bij de Brave Search API is dat zo), en deze app
-  bewaart ze nu wel, samen met je keuze "Dit ben ik". Met zo'n dienst moeten de resultaten dus live
-  getoond worden, en bewaar je alleen je eigen beoordeling. Leg in `search.js` een nieuwe dienst
-  naast `createDemoSearch()` en voeg hem toe aan `createSearch()`.
+  sommige verbieden het bewaren van resultaten (bij de Brave Search API heb je daarvoor een abonnement
+  met opslagrechten nodig), en deze app bewaart ze nu wel, samen met je keuze "Dit ben ik". Met zo'n
+  dienst moeten de resultaten dus live getoond worden, en bewaar je alleen je eigen beoordeling. Leg in
+  `search.js` een nieuwe dienst naast `createDemoSearch()` en voeg hem toe aan `createSearch()`.
+- **Databrokers, sociale media, openbare documenten en darkweb.** Ze staan als "Gepland" in het
+  bronnenregister. Ze hebben allemaal een echte zoekdienst of een aanbieder nodig, en er is niets
+  gebouwd wat doet alsof het werkt. Voor het darkweb komt er geen eigen crawler en kopen of bewaren
+  we geen gestolen gegevens: alleen via een aanbieder die dit legaal en geautoriseerd levert.
+- **Een AI-agent (fase 5).** Komt er een, dan geldt dezelfde regel als nu: geen bevinding zonder
+  controleerbare bron, datum en zekerheid. De agent mag onderzoek plannen, samenvatten en beoordelen,
+  maar niets verzinnen, en bronnen die niet toegankelijk waren, moeten genoemd worden.
+- **Doorlopende monitoring (fase 6).** Automatisch opnieuw scannen met een mail bij iets nieuws. Eerst
+  is er een echte bron nodig om steeds opnieuw te bevragen.
 - **De betaalde dienst van XposedOrNot (xonAPI+).** Die heeft hogere limieten en is bedoeld voor
   producten die op hun gegevens bouwen. De koppeling bestaat nog niet; de gratis dienst is genoeg
   voor persoonlijk gebruik.
@@ -311,10 +430,8 @@ je opnieuw zoekt, en de volgorde verandert er niet door.
   Turnstile (zoals HIBP zelf).
 - **Zoeken op telefoonnummer.** Een sms bevestigen is weinig waard als bewijs en kost geld, en er is
   niets wat we er veilig mee kunnen opzoeken.
-- **Verwijderverzoeken (AVG, artikel 17).** Bewust geschrapt: de app zoekt en toont, en verwijdert
-  niets.
-- **Zelf lekgegevens verzamelen.** De app gebruikt alleen de bekende dienst Have I Been Pwned. Er
-  komt geen eigen verzameling van gelekte wachtwoorden of andere gestolen gegevens.
+- **Zelf lekgegevens verzamelen.** De app gebruikt alleen bestaande diensten (Have I Been Pwned en
+  XposedOrNot). Er komt geen eigen verzameling van gelekte wachtwoorden of andere gestolen gegevens.
 - **Foto's zoeken en gezichtsherkenning.** Bewust niet.
 - **Wachtwoord vergeten.** Dat kan nu technisch (de app kan mailen) maar is nog niet gebouwd.
 - Bij registreren zie je of een e-mailadres al een account heeft. Dat kan nu netter, want we kunnen
@@ -351,6 +468,9 @@ je opnieuw zoekt, en de volgorde verandert er niet door.
   teller: na 10 controles per uur kan dan niemand meer controleren.
 - Een openbare controle trekt bots aan. Zet er voor je de site echt openbaar maakt een bot-controle
   voor (zie "Bewust (nog) niet gedaan").
+- De pagina `/bronnen` is voor iedereen te lezen en toont welke bronnen bij jouw instellingen aanstaan
+  (bijvoorbeeld of er een HIBP-sleutel is). Dat is bedoeld, maar weet dat het zichtbaar is. Er staan
+  geen sleutels of persoonsgegevens op.
 - **Database:** `node:sqlite` is in Node 22 nog experimenteel (vandaar de
   `--disable-warning` in `package.json`), en vanaf Node 24.15 een "release candidate".
   Voor een site die echt online gaat, is `better-sqlite3` de beproefde keuze. De code
@@ -367,15 +487,26 @@ je opnieuw zoekt, en de volgorde verandert er niet door.
 De app zoekt en toont. Dit zijn de logische vervolgstappen, in de volgorde die ik zou kiezen. Begin
 pas aan een stap als je hem echt wilt.
 
+- **XposedOrNot proberen met een echt adres** (je eigen), zodat die koppeling ook tegen de echte dienst
+  getest is. Dit kost niets en is de snelste manier om te zien of de datalekcontrole voor echte adressen
+  werkt.
 - **Een wachtwoordcontrole-pagina**, zoals pwnedpasswords bij Have I Been Pwned. Het wachtwoord wordt
   in de browser tot een hash gemaakt, en alleen de eerste 5 tekens daarvan gaan naar de dienst
   (k-anonimiteit). Het wachtwoord zelf verlaat de browser nooit. Dit werkt echt, zonder betaalde
   sleutel; `pwned.js` doet hetzelfde al bij het registreren.
-- **Een echte zoekdienst voor het web** (bijvoorbeeld de Brave Search API: ongeveer 1.000 zoekopdrachten
-  per maand gratis tegoed, een betaalmiddel is nodig). Resultaten mogen daar niet bewaard worden,
-  dus ze worden live getoond en alleen je beoordeling wordt bewaard. Alleen op je eigen naam, zoals nu.
-- **Automatisch opnieuw zoeken** met een mail als er iets nieuws is.
-- **Een bot-controle** (bijvoorbeeld Cloudflare Turnstile) op de openbare controle, voor je hem online zet.
+- **Een echte zoekdienst voor het web** (bijvoorbeeld de Brave Search API). Stand november 2026: een
+  maandelijks tegoed van ongeveer $5 (ruim 1.000 zoekopdrachten), een betaalmiddel is nodig, daarboven
+  ongeveer $5 per 1.000 zoekopdrachten; controleer de actuele prijzen. Resultaten mogen daar niet
+  bewaard worden zonder een abonnement met opslagrechten, dus ze worden live getoond en alleen je
+  beoordeling wordt bewaard. Alleen op je eigen naam, zoals nu. Met een echte zoekdienst kunnen ook de
+  stappen voor sociale media en openbare documenten beginnen.
+- **Een identiteitscontrole** (bijvoorbeeld iDIN of een ID-scan) voordat zoeken op naam voor andere
+  gebruikers opengaat.
+- **Een toestemmingsprocedure voor onderzoek naar iemand anders**, pas ná de identiteitscontrole.
+- **Automatisch opnieuw zoeken** met een mail als er iets nieuws is (fase 6).
+- **Een bot-controle** (bijvoorbeeld Cloudflare Turnstile) op de openbare controle, `trust proxy` en een
+  gecontroleerde privacyverklaring, voor je de site online zet.
+- **Een AI-agent** (fase 5), pas als er echte bronnen zijn om te beoordelen.
 
 ## Bronnen
 
@@ -384,3 +515,4 @@ pas aan een stap als je hem echt wilt.
   (2 per seconde, 25 per uur, 100 per dag per IP-adres), en
   [XposedOrNot-API op GitHub](https://github.com/XposedOrNot/XposedOrNot-API) voor de voorwaarden
   ("voor persoonlijk gebruik en weinig verkeer").
+- [Brave Search API](https://brave.com/search/api): voorwaarden voor het bewaren van resultaten en de actuele prijzen.

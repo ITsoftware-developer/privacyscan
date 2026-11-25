@@ -3,6 +3,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { BREACH_CONFIDENCE } from './confidence.js';
 
 export function openDatabase(path) {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
@@ -72,13 +73,44 @@ export function openDatabase(path) {
       detail      TEXT,                 -- bij webzoeken: de zoekopdracht
       PRIMARY KEY (user_id, kind)
     );
+
+    -- De laatste Deep Scan: welke stappen er liepen en hoe ze afliepen (ook wat niet
+    -- beschikbaar of niet toegankelijk was), en welke soorten gegevens zijn blootgesteld.
+    CREATE TABLE IF NOT EXISTS scan_runs (
+      user_id  INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      ran_at   INTEGER NOT NULL,
+      steps    TEXT    NOT NULL,                -- de stappen, als JSON
+      exposure TEXT    NOT NULL DEFAULT '[]'    -- de blootgestelde soorten gegevens, als JSON
+    );
   `);
 
   // Een database uit fase 1 heeft de twee nieuwe kolommen van users nog niet.
   addColumn(db, 'users', 'email_confirmed_at', 'INTEGER');
   addColumn(db, 'users', 'city', 'TEXT');
 
+  // Bij elke bevinding: uit welke bron, hoe zeker, en wanneer het voor het laatst is onderzocht
+  // (anders dan updated_at, dat ook verandert als jij een keuze maakt).
+  addColumn(db, 'findings', 'source_id', 'TEXT');
+  addColumn(db, 'findings', 'confidence', 'TEXT');
+  addColumn(db, 'findings', 'confidence_note', 'TEXT');
+  addColumn(db, 'findings', 'checked_at', 'INTEGER');
+  backfillEvidence(db);
+
   return db;
+}
+
+// Bevindingen uit de tijd voor deze kolommen krijgen hun bron en datum alsnog. Dat kan zonder te
+// gokken: een datalek heeft de bron in zijn gegevens (of is van HIBP, de enige bron toen), en er
+// bestond alleen de demo-zoekdienst. Een webresultaat krijgt geen zekerheid: die is nooit
+// beoordeeld, en dat tonen we dan ook zo.
+function backfillEvidence(db) {
+  db.exec('UPDATE findings SET checked_at = updated_at WHERE checked_at IS NULL');
+  db.prepare(`
+    UPDATE findings SET
+      source_id = CASE WHEN json_valid(details) THEN COALESCE(json_extract(details, '$.source'), 'hibp') ELSE 'hibp' END,
+      confidence = ?, confidence_note = ?
+    WHERE kind = 'breach' AND source_id IS NULL`).run(BREACH_CONFIDENCE.level, BREACH_CONFIDENCE.note);
+  db.exec("UPDATE findings SET source_id = 'demo' WHERE kind = 'web' AND source_id IS NULL");
 }
 
 function addColumn(db, table, column, type) {

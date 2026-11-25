@@ -1,0 +1,21 @@
+<section class="card engine<%= locals.wideCard ? ' card-wide' : '' %>" aria-labelledby="engine-heading">
+  <header class="engine-head">
+    <h2 id="engine-heading"><%= heading %></h2>
+    <% if (locals.sub) { %><span class="engine-sub"><%= sub %></span><% } %>
+  </header>
+  <ol class="engine-steps">
+    <% steps.forEach((step, index) => { const view = describeStep(step); %>
+      <li class="engine-step">
+        <span class="engine-num" aria-hidden="true"><%= index + 1 %></span>
+        <div class="engine-body">
+          <span class="engine-name"><%= view.title %></span>
+          <% if (view.note) { %><span class="engine-note"><%= view.note %></span><% } %>
+        </div>
+        <span class="state state-<%= view.tone %>"><%= view.label %></span>
+      </li>
+    <% }) %>
+  </ol>
+  <% if (locals.footnote) { %>
+    <p class="engine-foot"><%= footnote %><% if (locals.more) { %> <a href="<%= more.href %>"><%= more.text %></a><% } %></p>
+  <% } %>
+</section>

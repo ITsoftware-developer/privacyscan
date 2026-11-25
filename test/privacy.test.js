@@ -33,7 +33,8 @@ test('de privacyverklaring noemt alles wat fase 2 bewaart en verstuurt', async (
     /bevestigingsmail gebruiken we een e-maildienst/,
     /Waarop we zoeken/,
     /Er is geen zoekvak waarin je een andere naam/,
-    /datalekken en webresultaten en je keuzes: zolang je account bestaat/,
+    /je keuzes en het rapport van je laatste Deep Scan: zolang je account bestaat/,
+    /Bij elke bevinding bewaren we uit welke bron hij komt, wanneer we hem onderzochten/,
     /Bevestigingslinks: 30 minuten/,
   ]) {
     assert.match(text, onderwerp);

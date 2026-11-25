@@ -13,6 +13,47 @@
 <% } %>
 
 <div class="results">
+  <% if (run) { %>
+    <div id="rapport" class="report">
+      <%- include('partials/engine', {
+        heading: 'Rapport van je laatste Deep Scan',
+        sub: formatDateTime(run.ranAt),
+        steps: run.steps,
+        footnote: 'Een stap die niet voltooid is, staat hier met de reden. Wat nog niet bestaat, noemen we nooit voltooid.',
+        more: { href: '/bronnen', text: 'Bronnen en roadmap' },
+      }) %>
+    </div>
+
+    <article class="card" id="blootstelling">
+      <header class="card-head">
+        <h2>Blootgestelde gegevens</h2>
+        <% if (run.exposure.length > 0) { %><span class="badge badge-warn"><%= run.exposure.length === 1 ? '1 soort' : `${run.exposure.length} soorten` %></span><% } %>
+      </header>
+      <% if (run.exposure.length === 0) { %>
+        <p class="card-text">In de bekende lekken herkennen we geen inloggegevens, telefoonnummers, adressen of betaalgegevens.</p>
+      <% } else { %>
+        <ul class="findings">
+          <% for (const group of run.exposure) { %>
+            <li class="finding">
+              <h3><%= group.label %></h3>
+              <p class="finding-meta">Gelekt bij: <%= group.breaches.join(', ') %></p>
+              <p class="finding-text"><%= group.advice %></p>
+            </li>
+          <% } %>
+        </ul>
+      <% } %>
+      <p class="hint">We zien welke soorten gegevens zijn gelekt, niet de gegevens zelf. De bronnen geven die niet vrij.</p>
+    </article>
+  <% } else { %>
+    <article class="card" id="rapport">
+      <header class="card-head">
+        <h2>Deep Scan</h2>
+        <span class="badge">Nog niet gedaan</span>
+      </header>
+      <p class="card-text">Je hebt nog geen Deep Scan gedaan. Dat doe je op je <a href="/dashboard">dashboard</a>.</p>
+    </article>
+  <% } %>
+
   <article class="card" id="datalekken">
     <header class="card-head">
       <h2>Datalekken</h2>
@@ -54,6 +95,7 @@
                   <a href="<%= breach.url %>" target="_blank" rel="noopener noreferrer">Meer over dit datalek<%= sourceById(breach.details.source).id === 'hibp' ? ' bij Have I Been Pwned' : '' %></a>
                 </p>
               <% } %>
+              <%- include('partials/evidence', { finding: breach }) %>
             </li>
           <% } %>
         </ul>
@@ -104,6 +146,7 @@
               <% if (item.details.snippet) { %>
                 <p class="finding-text"><%= item.details.snippet %></p>
               <% } %>
+              <%- include('partials/evidence', { finding: item }) %>
               <form method="post" action="/resultaten/<%= item.id %>" class="choices">
                 <% for (const [value, label] of Object.entries(choices)) { %>
                   <button type="submit" name="status" value="<%= value %>"

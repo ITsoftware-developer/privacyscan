@@ -291,6 +291,117 @@ code { font-size: 0.9em; background: rgb(0 0 0 / 5%); padding: 1px 5px; border-r
 .promises ul { margin: 10px 0 0; padding-left: 20px; }
 .promises li { margin-bottom: 8px; }
 
+/* Startpagina: de Research Engine */
+.hero-engine { text-align: center; margin-bottom: 20px; }
+.hero-engine h1 { font-size: 2.3rem; }
+.hero-engine .lead { margin-bottom: 20px; }
+.hero-engine .check-form { max-width: 620px; margin: 0 auto; }
+.hero-engine .alert { text-align: left; }
+.engine-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 4px 14px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--ok);
+  background: var(--ok-bg);
+  border: 1px solid var(--ok-border);
+  border-radius: 999px;
+}
+.engine-status.is-test { color: #7a4b00; background: #fff6e0; border-color: #f3dca5; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.engine-status .dot { box-shadow: 0 0 0 4px rgb(21 115 71 / 18%); }
+.engine-status.is-test .dot { box-shadow: 0 0 0 4px rgb(122 75 0 / 15%); }
+
+/* Een stap met zijn stand. Lichte achtergrond; in de donkere engine staat hieronder een variant. */
+.state {
+  align-self: flex-start;
+  padding: 3px 10px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+  border-radius: 999px;
+}
+.state-ok { color: var(--ok); background: var(--ok-bg); }
+.state-bad { color: var(--error); background: var(--error-bg); }
+.state-warn { color: #7a4b00; background: #fff6e0; }
+.state-idle { color: var(--muted); background: #edf0f6; }
+
+.engine {
+  max-width: 720px;
+  margin: 0 auto 16px;
+  color: #e6ebf7;
+  background: #0f1626;
+  border-color: #1d2840;
+}
+.engine.card-wide { max-width: none; margin: 0; }
+.engine-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; margin-bottom: 6px; }
+.engine-head h2 { color: #fff; }
+.engine-sub { font-size: 0.85rem; color: #9aa6c2; }
+.engine-steps { list-style: none; margin: 0; padding: 0; }
+.engine-step { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; border-top: 1px solid #1d2840; }
+.engine-step:first-child { border-top: 0; }
+.engine-num {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #9aa6c2;
+  border: 1px solid #2a3858;
+  border-radius: 50%;
+}
+.engine-body { flex: 1; min-width: 0; display: flex; flex-direction: column; text-align: left; }
+.engine-name { font-weight: 600; }
+.engine-note { margin-top: 2px; font-size: 0.85rem; color: #9aa6c2; overflow-wrap: anywhere; }
+.engine-foot { margin: 8px 0 0; padding-top: 12px; font-size: 0.85rem; color: #9aa6c2; border-top: 1px solid #1d2840; text-align: left; }
+.engine-foot a { color: #9db3ff; }
+.engine .state-ok { color: #6ee7a8; background: rgb(34 197 94 / 14%); }
+.engine .state-bad { color: #ff9c92; background: rgb(248 113 113 / 14%); }
+.engine .state-warn { color: #ffd27a; background: rgb(251 191 36 / 14%); }
+.engine .state-idle { color: #9aa6c2; background: rgb(148 163 184 / 14%); }
+.report { display: contents; }
+.report .engine { max-width: none; margin: 0; }
+
+/* Het bewijs bij een bevinding: bron, datum en zekerheid */
+.evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  background: var(--bg);
+  border-radius: 10px;
+}
+.evidence div { display: flex; flex-wrap: wrap; gap: 6px; }
+.evidence dt { font-weight: 600; color: var(--text); }
+.evidence dd { margin: 0; overflow-wrap: anywhere; }
+.evidence-note { color: var(--muted); }
+
+/* Bronnen en roadmap */
+.plain-list { margin: 10px 0 0; padding-left: 20px; }
+.plain-list li { margin-bottom: 8px; }
+.register-list, .phases { list-style: none; margin: 0; padding: 0; }
+.register-item { padding: 14px 0; border-top: 1px solid var(--border); }
+.register-item:first-child { border-top: 0; padding-top: 4px; }
+.register-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.register-name { font-weight: 700; }
+.register-top .state { align-self: center; margin-left: auto; }
+.chip-soft { padding: 2px 10px; font-size: 0.78rem; color: var(--muted); background: #edf0f6; border-radius: 999px; }
+.register-gives { margin: 6px 0 0; }
+.register-note { margin: 4px 0 0; font-size: 0.9rem; color: var(--muted); }
+.phase { display: flex; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); }
+.phase:first-child { border-top: 0; padding-top: 4px; }
+.phase p { margin: 4px 0 0; color: var(--muted); }
+.phase .state { margin-left: 6px; }
+.phase.is-done .step-dot { color: #fff; background: var(--ok); border-color: var(--ok); }
+
 /* Testpostvak */
 .mail { margin: 20px 0; padding-top: 16px; border-top: 1px solid var(--border); }
 .mail-text {
@@ -318,6 +429,10 @@ code { font-size: 0.9em; background: rgb(0 0 0 / 5%); padding: 1px 5px; border-r
   .facts { grid-template-columns: 1fr; gap: 0; }
   .facts dd { margin-bottom: 8px; }
   .hero h1 { font-size: 1.6rem; }
+  .hero-engine h1 { font-size: 1.7rem; }
+  .engine-step { flex-wrap: wrap; }
+  .engine-body { flex-basis: calc(100% - 40px); }
+  .engine-step .state { margin-left: 36px; }
   .check-form { flex-direction: column; }
   .check-form .button { padding: 12px 24px; }
 }

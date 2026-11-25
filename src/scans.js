@@ -1,4 +1,5 @@
 // Het eigenlijke zoeken: vraag het aan een dienst, bewaar wat er terugkomt.
+import { DEMO_CONFIDENCE, rateWebResult } from './confidence.js';
 import { recordScan, saveBreaches, saveWebResults } from './findings.js';
 import { ScanError } from './scan-error.js';
 import { buildQuery, cleanName, cleanResults } from './search.js';
@@ -35,7 +36,15 @@ export async function scanWeb({ db, user, search, allowed = true, now = Date.now
   }
 
   const results = cleanResults(raw);
-  const added = saveWebResults(db, user.id, results, now);
+
+  // Bij elk resultaat bewaren we uit welke bron het komt en hoe zeker het is dat het over
+  // jou gaat. De demo verzint alles; daar is geen zekerheid te geven.
+  const sourceId = search.isDemo ? 'demo' : String(search.name ?? 'web');
+  const rate = (result) => (search.isDemo
+    ? DEMO_CONFIDENCE
+    : rateWebResult({ name: user.name, city: user.city, title: result.title, snippet: result.snippet }));
+
+  const added = saveWebResults(db, user.id, results, now, { sourceId, rate });
   recordScan(db, user.id, 'web', results.length, added, query, now);
   return { found: results.length, added, query };
 }

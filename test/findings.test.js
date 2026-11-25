@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../src/db.js';
 import {
-  WEB_CHOICES, countFindings, lastScan, listFindings, recordScan, saveBreaches, saveWebResults, setWebStatus,
+  WEB_CHOICES, countFindings, lastRun, lastScan, listFindings, recordScan, saveBreaches, saveRun, saveWebResults,
+  setWebStatus,
 } from '../src/findings.js';
 import { ADOBE, CLUB, GIDS, NAAMGENOOT } from './helpers.js';
 
@@ -204,4 +205,123 @@ test('account verwijderen wist de webresultaten en scans van die gebruiker, en n
   assert.equal(lastScan(db, ANNA_ID, 'web'), null);
   assert.equal(webOf(db, BRAM_ID).length, 1);
   assert.notEqual(lastScan(db, BRAM_ID, 'web'), null);
+});
+
+// --- Bewijs bij elke bevinding: bron, datum en zekerheid ---------------------------------------
+
+test('een datalek bewaart zijn bron, zijn zekerheid en wanneer het onderzocht is', () => {
+  const db = newDb();
+  saveBreaches(db, ANNA_ID, [
+    { ...ADOBE, title: 'Adobe' },
+    { name: 'LinkedIn', title: 'LinkedIn', source: 'xon', url: 'https://example.com/linkedin', dataClasses: [] },
+  ], 5000);
+
+  const [linkedin, adobe] = [
+    listFindings(db, ANNA_ID).breaches.find((item) => item.title === 'LinkedIn'),
+    listFindings(db, ANNA_ID).breaches.find((item) => item.title === 'Adobe'),
+  ];
+  assert.deepEqual([adobe.source_id, adobe.confidence, adobe.checked_at], ['hibp', 'hoog', 5000]); // zonder bron: HIBP
+  assert.deepEqual([linkedin.source_id, linkedin.confidence, linkedin.checked_at], ['xon', 'hoog', 5000]);
+  assert.match(adobe.confidence_note, /letterlijke overeenkomst/);
+});
+
+test('een datalek dat opnieuw gezien wordt, krijgt een nieuwe onderzoeksdatum maar houdt zijn eerste vondst', () => {
+  const db = newDb();
+  saveBreaches(db, ANNA_ID, [ADOBE], 1000);
+  assert.equal(saveBreaches(db, ANNA_ID, [ADOBE], 9000), 0);
+
+  const row = db.prepare("SELECT found_at, updated_at, checked_at FROM findings WHERE kind = 'breach'").get();
+  assert.deepEqual({ ...row }, { found_at: 1000, updated_at: 9000, checked_at: 9000 });
+});
+
+test('een webresultaat bewaart zijn bron en zekerheid, en wordt bij een nieuwe ronde opnieuw beoordeeld', () => {
+  const db = newDb();
+  const asked = [];
+  const rate = (result) => {
+    asked.push(result.url);
+    return { level: 'gemiddeld', note: 'Alleen je naam staat erin.' };
+  };
+  saveWebResults(db, ANNA_ID, [CLUB], 1000, { sourceId: 'brave', rate });
+
+  let item = webOf(db)[0];
+  assert.deepEqual([item.source_id, item.confidence, item.confidence_note, item.checked_at], [
+    'brave', 'gemiddeld', 'Alleen je naam staat erin.', 1000,
+  ]);
+  assert.deepEqual(asked, [CLUB.url]);
+
+  // Een woonplaats kan veranderd zijn: dan is dezelfde pagina ineens zekerder.
+  saveWebResults(db, ANNA_ID, [CLUB], 2000, { sourceId: 'brave', rate: () => ({ level: 'hoog', note: 'Naam en woonplaats.' }) });
+  item = webOf(db)[0];
+  assert.deepEqual([item.confidence, item.confidence_note, item.checked_at], ['hoog', 'Naam en woonplaats.', 2000]);
+  assert.equal(webOf(db).length, 1);
+});
+
+test('bewaren zonder bewijs wist geen bewijs dat er al was, maar werkt wel de datum bij', () => {
+  const db = newDb();
+  saveWebResults(db, ANNA_ID, [CLUB], 1000, { sourceId: 'brave', rate: () => ({ level: 'laag', note: 'Niet erin.' }) });
+  saveWebResults(db, ANNA_ID, [CLUB], 3000); // zonder bewijs: zoals de oude aanroep
+
+  const item = webOf(db)[0];
+  assert.deepEqual([item.source_id, item.confidence, item.confidence_note], ['brave', 'laag', 'Niet erin.']);
+  assert.equal(item.checked_at, 3000);
+});
+
+test('zonder bewijs bewaard blijft zonder bewijs: er wordt niets verzonnen', () => {
+  const db = newDb();
+  saveWebResults(db, ANNA_ID, [CLUB], 1000);
+  const item = webOf(db)[0];
+  assert.deepEqual([item.source_id, item.confidence, item.confidence_note], [null, null, null]);
+  assert.equal(item.checked_at, 1000);
+});
+
+test('jouw keuze verandert niet wanneer een resultaat onderzocht is', () => {
+  const db = newDb();
+  saveWebResults(db, ANNA_ID, [CLUB], 1000, { sourceId: 'brave' });
+  setWebStatus(db, ANNA_ID, idOf(db, CLUB.url), 'mine');
+  const item = webOf(db)[0];
+  assert.equal(item.status, 'mine');
+  assert.equal(item.checked_at, 1000); // updated_at verandert door je keuze, checked_at niet
+});
+
+// --- Het rapport van de laatste Deep Scan ------------------------------------------------------
+
+const RUN = {
+  ranAt: 4000,
+  steps: [
+    { id: 'datalekken', title: 'Datalekdatabases onderzoeken', status: 'done', sources: ['hibp'], note: '1 datalek.' },
+    { id: 'databrokers', title: 'Databrokers controleren', status: 'planned', sources: [], note: 'Nog niet.' },
+  ],
+  exposure: [{ id: 'inloggegevens', label: 'Inloggegevens', breaches: ['Adobe'], advice: 'Pas je wachtwoord aan.' }],
+};
+
+test('het rapport van de laatste Deep Scan wordt bewaard en teruggegeven zoals het was', () => {
+  const db = newDb();
+  assert.equal(lastRun(db, ANNA_ID), null); // nog geen Deep Scan
+
+  saveRun(db, ANNA_ID, RUN);
+  assert.deepEqual(lastRun(db, ANNA_ID), RUN);
+  assert.equal(lastRun(db, BRAM_ID), null); // van Anna alleen
+});
+
+test('een nieuw rapport vervangt het vorige, per gebruiker', () => {
+  const db = newDb();
+  saveRun(db, ANNA_ID, RUN);
+  saveRun(db, BRAM_ID, { ...RUN, ranAt: 1 });
+  saveRun(db, ANNA_ID, { ranAt: 9000, steps: [], exposure: [] });
+
+  assert.deepEqual(lastRun(db, ANNA_ID), { ranAt: 9000, steps: [], exposure: [] });
+  assert.equal(lastRun(db, BRAM_ID).ranAt, 1);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM scan_runs').get().n, 2);
+});
+
+test('een kapot bewaard rapport geeft niets terug, in plaats van iets verkeerds', () => {
+  const db = newDb();
+  saveRun(db, ANNA_ID, RUN);
+
+  for (const [steps, exposure] of [
+    ['geen json', '[]'], ['[]', 'ook geen json'], ['{"een":"object"}', '[]'], ['[]', '"tekst"'], ['null', '[]'], ['', ''],
+  ]) {
+    db.prepare('UPDATE scan_runs SET steps = ?, exposure = ? WHERE user_id = ?').run(steps, exposure, ANNA_ID);
+    assert.equal(lastRun(db, ANNA_ID), null, `${steps} / ${exposure}`);
+  }
 });

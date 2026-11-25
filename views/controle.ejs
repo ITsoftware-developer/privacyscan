@@ -1,11 +1,12 @@
 <%- include('partials/head', { title: 'Controleer een e-mailadres' }) %>
 
-<section class="hero">
-  <h1>Staat dit e-mailadres in een datalek?</h1>
-  <p class="lead">
-    Typ een e-mailadres in en we kijken of het voorkomt in bekende datalekken. Je ziet alleen
-    <em>in welk lek</em> het zat en welke soorten gegevens er zijn gelekt, nooit de gegevens zelf.
+<section class="hero hero-engine">
+  <p class="engine-status<%= testMode ? ' is-test' : '' %>">
+    <span class="dot" aria-hidden="true"></span>
+    <%= testMode ? 'Testmodus' : 'Engine online' %>
   </p>
+  <h1>Wat weet het internet over jou?</h1>
+  <p class="lead">Ontdek waar jouw persoonlijke gegevens zijn blootgesteld.</p>
 
   <% if (error) { %>
     <p class="alert alert-error" role="alert"><%= error %></p>
@@ -14,8 +15,8 @@
   <form method="post" action="/controle" class="check-form">
     <label for="email" class="visually-hidden">E-mailadres</label>
     <input id="email" name="email" type="email" autocomplete="email" required maxlength="254"
-           placeholder="naam@voorbeeld.nl" value="<%= email %>">
-    <button type="submit" class="button button-action">Controleer</button>
+           placeholder="jouw@email.nl" value="<%= email %>">
+    <button type="submit" class="button button-action">Start Deep Scan</button>
   </form>
   <p class="hint">Het adres dat je intypt, bewaren we niet.</p>
 
@@ -28,6 +29,14 @@
     </p>
   <% } %>
 </section>
+
+<%- include('partials/engine', {
+  heading: 'Research Engine',
+  sub: result ? 'Dit is wat er nu gedaan is' : 'Zo onderzoeken we een adres',
+  steps,
+  footnote: 'Zonder account loopt alleen de datalekcontrole. Met een account en een bevestigd e-mailadres loopt de Deep Scan alle stappen die bestaan, en staat bij elke stap wat er wel of niet kon. Wat nog niet bestaat, noemen we niet voltooid.',
+  more: { href: '/bronnen', text: 'Bronnen en roadmap' },
+}) %>
 
 <% if (result) { %>
   <section class="card result" aria-live="polite">
@@ -65,6 +74,7 @@
                 <a href="<%= breach.url %>" target="_blank" rel="noopener noreferrer">Meer over dit datalek<%= result.source.id === 'hibp' ? ' bij Have I Been Pwned' : '' %></a>
               </p>
             <% } %>
+            <%- include('partials/evidence', { finding: breach }) %>
           </li>
         <% } %>
       </ul>
