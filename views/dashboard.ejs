@@ -72,7 +72,7 @@
       <p class="card-text">
         Onderzoekt in één keer alle bronnen die voor jouw account beschikbaar zijn. Wat niet kon of nog
         niet bestaat, staat in het rapport met de reden. Alles wat we vinden, krijgt een bron, een datum
-        en een zekerheid.
+        en een beoordeling.
       </p>
       <form method="post" action="/scan/deep">
         <button type="submit" class="button button-action">Start Deep Scan</button>
@@ -159,16 +159,29 @@
       <% if (ownerMode) { %>
         <p class="hint">Je bent de beheerder van deze site. Alleen jij mag hier op naam zoeken, zonder identiteitscheck.</p>
       <% } %>
-      <p class="hint">
-        <% if (searchIsDemo) { %>
-          Voorbeeldstand: er is nog geen echte zoekdienst gekoppeld, dus je krijgt nepdata en er gaat niets naar buiten.
-        <% } else { %>
-          Daarvoor sturen we je naam naar de zoekdienst.
-        <% } %>
-      </p>
-      <form method="post" action="/scan/web">
-        <button type="submit" class="button button-action">Zoek op het web</button>
-      </form>
+      <% if (!searchPolicy.configured) { %>
+        <p class="alert alert-warning card-alert" role="note">
+          <strong>Er is geen zoekdienst ingesteld.</strong> We zoeken daarom niet op het web, en verzinnen
+          ook niets. Zet <code>BRAVE_API_KEY</code> in je <code>.env</code> (zie de README) en start de
+          site opnieuw.
+        </p>
+      <% } else { %>
+        <p class="hint">
+          <% if (searchPolicy.isDemo) { %>
+            Voorbeeldstand: dit is de demo. Je krijgt nepdata en er gaat niets naar buiten.
+          <% } else { %>
+            Daarvoor sturen we je naam<% if (user.city) { %> en woonplaats<% } %> als zoekopdracht naar
+            <%= searchPolicy.name %>. Wat we vinden zijn mogelijke vermeldingen: jij beoordeelt of ze van jou zijn.
+            <% if (!searchPolicy.retains) { %>
+              De zoekdienst staat niet toe dat we resultaten bewaren, dus ze blijven <%= searchPolicy.keepMinutes %>
+              minuten zichtbaar. Jouw keuzes blijven bewaard.
+            <% } %>
+          <% } %>
+        </p>
+        <form method="post" action="/scan/web">
+          <button type="submit" class="button button-action">Zoek op het web</button>
+        </form>
+      <% } %>
       <% if (webScan) { %>
         <p class="hint">
           Laatst gezocht op <%= formatDateTime(webScan.ran_at) %>.

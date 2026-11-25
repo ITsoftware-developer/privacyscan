@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { BREACH_CONFIDENCE } from './confidence.js';
+import { webKey } from './retention.js';
 
 export function openDatabase(path) {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
@@ -74,6 +75,18 @@ export function openDatabase(path) {
       PRIMARY KEY (user_id, kind)
     );
 
+    -- Wat je zelf hebt gekozen bij een webresultaat (Dit ben ik / Dit ben ik niet / Weet ik niet).
+    -- Dit staat los van de resultaten: sommige zoekdiensten staan niet toe dat we hun resultaten
+    -- bewaren. Die verdwijnen dan na een half uur, maar jouw keuze blijft. Er staat alleen een
+    -- vingerafdruk (SHA-256) van het adres in, nooit het adres, de titel of het fragment zelf.
+    CREATE TABLE IF NOT EXISTS web_choices (
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      url_key    TEXT    NOT NULL,
+      status     TEXT    NOT NULL CHECK (status IN ('mine', 'not_mine', 'unknown')),
+      decided_at INTEGER NOT NULL,
+      PRIMARY KEY (user_id, url_key)
+    );
+
     -- De laatste Deep Scan: welke stappen er liepen en hoe ze afliepen (ook wat niet
     -- beschikbaar of niet toegankelijk was), en welke soorten gegevens zijn blootgesteld.
     CREATE TABLE IF NOT EXISTS scan_runs (
@@ -94,6 +107,10 @@ export function openDatabase(path) {
   addColumn(db, 'findings', 'confidence', 'TEXT');
   addColumn(db, 'findings', 'confidence_note', 'TEXT');
   addColumn(db, 'findings', 'checked_at', 'INTEGER');
+  // Tot wanneer een bevinding bewaard mag blijven. Leeg = zolang je account bestaat. Webresultaten
+  // van een zoekdienst die bewaren niet toestaat, krijgen hier een tijd (zie retention.js).
+  addColumn(db, 'findings', 'expires_at', 'INTEGER');
+  db.exec('CREATE INDEX IF NOT EXISTS findings_expiry ON findings (expires_at) WHERE expires_at IS NOT NULL');
   backfillEvidence(db);
 
   return db;
@@ -132,11 +149,34 @@ export function inTransaction(db, work) {
   }
 }
 
-// Wist verlopen sessies, bevestigingslinks en tellers. server.js roept dit elke
-// minuut aan.
-export function removeExpired(db) {
-  const now = Date.now();
+// Wist verlopen sessies, bevestigingslinks, tellers en webresultaten die niet langer bewaard mogen
+// worden. server.js roept dit elke minuut aan.
+export function removeExpired(db, now = Date.now()) {
   db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(now);
   db.prepare('DELETE FROM email_confirmations WHERE expires_at <= ?').run(now);
   db.prepare('DELETE FROM rate_limits WHERE reset_at <= ?').run(now);
+  db.prepare('DELETE FROM findings WHERE expires_at IS NOT NULL AND expires_at <= ?').run(now);
+}
+
+// Wist alles wat de demo-zoekdienst verzonnen heeft: de nepresultaten, de keuzes die je daarbij
+// maakte, de laatste webzoekopdracht en een Deep Scan-rapport waar demo-resultaten in staan.
+// server.js doet dit zodra er een andere zoekdienst dan de demo is, zodat er nooit nepdata blijft
+// staan tussen echte bevindingen. Geeft terug hoeveel nepresultaten er weg zijn.
+export function purgeDemoData(db) {
+  return inTransaction(db, () => {
+    const demo = db
+      .prepare("SELECT user_id, url FROM findings WHERE kind = 'web' AND source_id = 'demo'")
+      .all();
+    const dropChoice = db.prepare('DELETE FROM web_choices WHERE user_id = ? AND url_key = ?');
+    for (const row of demo) dropChoice.run(row.user_id, webKey(row.url));
+
+    db.exec(`
+      DELETE FROM scans WHERE kind = 'web'
+        AND user_id IN (SELECT user_id FROM findings WHERE kind = 'web' AND source_id = 'demo');
+      DELETE FROM scan_runs WHERE json_valid(steps)
+        AND EXISTS (SELECT 1 FROM json_each(scan_runs.steps) WHERE json_extract(json_each.value, '$.demo') = 1);
+      DELETE FROM findings WHERE kind = 'web' AND source_id = 'demo';
+    `);
+    return demo.length;
+  });
 }

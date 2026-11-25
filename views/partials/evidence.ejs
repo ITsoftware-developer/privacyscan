@@ -1,4 +1,4 @@
-<% const origin = evidenceSource(finding.source_id); %>
+<% const origin = evidenceSource(finding.source_id); const isWeb = finding.kind === 'web'; %>
 <dl class="evidence" aria-label="Bewijs bij deze bevinding">
   <div>
     <dt>Bron</dt>
@@ -10,8 +10,19 @@
     <dt>Onderzocht op</dt>
     <dd><%= finding.checked_at ? formatDateTime(finding.checked_at) : 'onbekend' %></dd>
   </div>
-  <div>
-    <dt>Zekerheid</dt>
-    <dd><%= confidenceLabel(finding.confidence) %><% if (finding.confidence_note) { %> <span class="evidence-note">· <%= finding.confidence_note %></span><% } %></dd>
-  </div>
+  <% if (isWeb) { %>
+    <div>
+      <dt>Overeenkomst met je naam</dt>
+      <dd><%= confidenceLabel(finding.confidence, 'web') %><% if (finding.confidence_note) { %> <span class="evidence-note">· <%= finding.confidence_note %></span><% } %></dd>
+    </div>
+    <div>
+      <dt>Jouw oordeel</dt>
+      <dd><%= decisionLabel(finding.status) %></dd>
+    </div>
+  <% } else { %>
+    <div>
+      <dt>Zekerheid</dt>
+      <dd><%= confidenceLabel(finding.confidence) %><% if (finding.confidence_note) { %> <span class="evidence-note">· <%= finding.confidence_note %></span><% } %></dd>
+    </div>
+  <% } %>
 </dl>

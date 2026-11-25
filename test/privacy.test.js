@@ -50,7 +50,45 @@ test('de privacyverklaring is eerlijk over de demo-zoekdienst: er gaat niets naa
 
 test('met een echte zoekdienst noemt de privacyverklaring die en zegt wat er naartoe gaat', async (t) => {
   const text = await privacyText(t, { search: fakeSearch({ isDemo: false, name: 'Zoekmachine X' }) });
-  assert.match(text, /sturen we je naam \(en je woonplaats, als je die hebt ingevuld\) naar de zoekdienst Zoekmachine X/);
+  assert.match(text, /sturen we je naam \(en je woonplaats, als je die hebt ingevuld\) als zoekopdracht naar de zoekdienst Zoekmachine X/);
+  assert.doesNotMatch(text, /demo met verzonnen resultaten/);
+  // Deze dienst staat bewaren toe, dus er hoeft geen bewaartermijn van 30 minuten bij.
+  assert.doesNotMatch(text, /bewaren we maar \d+ minuten/);
+  assert.doesNotMatch(text, /niet toestaat dat we ze bewaren/);
+});
+
+test('een zoekdienst die bewaren verbiedt: de privacyverklaring noemt de korte bewaartermijn en de hash', async (t) => {
+  const { WEB_RESULT_MINUTES } = await import('../src/retention.js');
+  const text = await privacyText(t, {
+    search: fakeSearch({ isDemo: false, name: 'Zoekmachine X', retainsResults: false }),
+  });
+  assert.match(text, new RegExp(`De webresultaten zelf bewaren we maar ${WEB_RESULT_MINUTES} minuten`));
+  assert.match(text, /omdat Zoekmachine X niet toestaat dat we ze bewaren/);
+  assert.match(text, /alleen de keuze zelf bewaard, samen met een vingerafdruk \(hash\) van het adres/);
+  assert.match(text, /een code, niet het adres, de titel of de tekst zelf/);
+  // De naam gaat nog steeds als zoekopdracht naar die dienst.
+  assert.match(text, /als zoekopdracht naar de zoekdienst Zoekmachine X/);
+});
+
+test('bij de demo-zoekdienst staat er geen bewaartermijn: de demo bewaart eigen, verzonnen resultaten', async (t) => {
+  const text = await privacyText(t, { search: fakeSearch({ isDemo: true, retainsResults: false }) });
+  assert.doesNotMatch(text, /niet toestaat dat we ze bewaren/);
+});
+
+test('zonder zoekdienst zegt de privacyverklaring dat er niet op het web gezocht wordt', async (t) => {
+  const text = await privacyText(t, { search: null });
+  assert.match(text, /Er is geen zoekdienst ingesteld\. Je naam gaat daarom niet naar een zoekdienst/);
+  assert.match(text, /er wordt niet op het web gezocht/);
+  assert.doesNotMatch(text, /demo met verzonnen resultaten/);
+  assert.doesNotMatch(text, /sturen we je naam/);
+  assert.doesNotMatch(text, /niet toestaat dat we ze bewaren/);
+});
+
+test('op een openbare site zonder zoekdienst blijft de privacyverklaring ook kloppen', async (t) => {
+  const text = await privacyText(t, { production: true, search: null });
+  assert.match(text, /Zoeken op naam staat op deze site uit/);
+  assert.match(text, /Er is geen zoekdienst ingesteld\. Je naam gaat daarom niet naar een zoekdienst/);
+  assert.doesNotMatch(text, /sturen we je naam/);
   assert.doesNotMatch(text, /demo met verzonnen resultaten/);
 });
 

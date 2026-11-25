@@ -8,15 +8,16 @@ import { checkOrigin, loadUser } from './auth.js';
 import { CONFIRM_MINUTES, sendConfirmationMail } from './confirm.js';
 import { createHibp } from './hibp.js';
 import { createMailer } from './mail.js';
-import { confidenceLabel } from './confidence.js';
+import { confidenceLabel, decisionLabel } from './confidence.js';
 import { dataClassLabel } from './data-classes.js';
 import { describeStep } from './engine.js';
+import { describeWebResult } from './extract.js';
 import { parseOwnerEmail } from './owner.js';
 import { isPwned } from './pwned.js';
+import { WEB_RESULT_MINUTES } from './retention.js';
 import { createRoutes } from './routes.js';
 import { createPublicRoutes } from './routes-public.js';
 import { createScanRoutes } from './routes-scan.js';
-import { createSearch } from './search.js';
 import { PHASES, evidenceSource, sourceById, sourceHost } from './sources.js';
 
 const ROOT = join(import.meta.dirname, '..');
@@ -32,7 +33,7 @@ export function createApp({
   scanLimit = 5,        // zoekopdrachten per uur per account (datalekken en web apart; de Deep Scan telt voor allebei)
   checkLimit = 10,      // controles van een e-mailadres per uur per IP-adres (de openbare pagina)
   hibp = createHibp(),  // de bron van datalekken: Have I Been Pwned (zie server.js voor de gratis XposedOrNot); de tests vervangen deze door een nepversie
-  search = createSearch(), // zoekdienst voor je naam; standaard de demo met nepdata
+  search = null,        // zoekdienst voor je naam (zie search.js); zonder zoekdienst zoekt de app niet op het web en verzint hij niets
   mailer = createMailer(),            // zonder SMTP-instelling: een testpostvak in het geheugen
   baseUrl = 'http://localhost:3000',  // voor de links in mails; komt nooit uit het verzoek zelf
   contact = {},         // naam en e-mailadres voor de privacyverklaring
@@ -51,8 +52,12 @@ export function createApp({
   app.locals.searchPolicy = {
     allowed: !production,                  // iedereen mag op naam zoeken (op je eigen computer)
     ownerOnly: production && owner !== null, // op een openbare site alleen de beheerder
-    isDemo: Boolean(search.isDemo),
-    name: search.name ?? 'de zoekdienst',
+    configured: search !== null,           // is er een zoekdienst ingesteld?
+    isDemo: Boolean(search?.isDemo),
+    name: search?.label ?? search?.name ?? 'de zoekdienst',
+    // Mogen we de resultaten bewaren? Zo niet, dan blijven ze maar even staan (zie retention.js).
+    retains: search?.retainsResults === true,
+    keepMinutes: WEB_RESULT_MINUTES,
   };
   // Datums netjes in het Nederlands, voor in de pagina's.
   app.locals.formatDateTime = (ms) => new Date(ms).toLocaleString('nl-NL', { dateStyle: 'long', timeStyle: 'short' });
@@ -62,6 +67,8 @@ export function createApp({
   // Voor het rapport van de Deep Scan en het bewijs bij elke bevinding.
   app.locals.describeStep = describeStep;
   app.locals.confidenceLabel = confidenceLabel;
+  app.locals.decisionLabel = decisionLabel;
+  app.locals.describeWebResult = describeWebResult;
   app.locals.evidenceSource = evidenceSource;
   app.locals.phases = PHASES;
   // Voor de privacyverklaring: naar welke dienst gaan de e-mailadressen? (Have I Been Pwned,

@@ -14,8 +14,9 @@
     <ul class="plain-list">
       <li>
         <strong>Niets verzonnen.</strong> Elke bevinding heeft een bron die je kunt nalopen, een datum
-        waarop we hem onderzochten en een zekerheid: hoe zeker het is dat hij over jou gaat. Bij elke
-        beoordeling staat waarom.
+        waarop we hem onderzochten en een beoordeling: hoe goed hij bij jou past. Bij elke beoordeling
+        staat waarom. Een webresultaat is altijd een <em>mogelijke</em> overeenkomst: pas als jij het
+        bevestigt, behandelen we het als van jou.
       </li>
       <li>
         <strong>Eerlijk over wat niet kon.</strong> Was een bron niet bereikbaar, of bestaat een onderdeel
@@ -39,7 +40,7 @@
     </header>
     <ul class="register-list">
       <% for (const item of register) { %>
-        <% const tone = { actief: 'ok', testmodus: 'warn', demo: 'warn', uit: 'idle', gepland: 'idle' }[item.state] ?? 'idle'; %>
+        <% const tone = { actief: 'ok', testmodus: 'warn', demo: 'warn', 'niet-ingesteld': 'warn', uit: 'idle', gepland: 'idle' }[item.state] ?? 'idle'; %>
         <li class="register-item">
           <div class="register-top">
             <span class="register-name">

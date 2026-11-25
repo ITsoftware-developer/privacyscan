@@ -63,7 +63,7 @@ test('de bronnenpagina is openbaar en zegt eerlijk wat werkt en wat nog niet bes
     'Have I Been Pwned': 'Actief',
     XposedOrNot: 'Uit',
     'Pwned Passwords': 'Actief',
-    'Zoekdienst voor het web': 'Demo (nepdata)',
+    'Zoekdienst voor het web (Brave Search)': 'Demo (nepdata)',
     Databrokers: 'Gepland',
     'Sociale media': 'Gepland',
     'Openbare documenten': 'Gepland',
@@ -160,8 +160,8 @@ test('de startpagina laat zien wat er te doen is, en noemt nog niets voltooid', 
     ['Datalekdatabases onderzoeken', 'Beschikbaar'],
     ['Databrokers controleren', 'Nog niet gebouwd'],
     ['Openbare internetbronnen onderzoeken', 'Met account'],
-    ['Blootstelling van persoonsgegevens controleren', 'Na stap 1'],
-    ['Bevindingen verifiëren', 'Na stap 1'],
+    ['Mogelijke blootstelling beoordelen', 'Na stap 1'],
+    ['Bewijs controleren', 'Na stap 1'],
   ]);
   assert.doesNotMatch(html, /Voltooid|Testmodus/);
   // De naam van het paneel zegt niet dat er een AI is: die bestaat pas in fase 5.
@@ -201,16 +201,17 @@ test('na een controle is precies wat gedaan is voltooid: de rest blijft overgesl
     ['Datalekdatabases onderzoeken', 'Voltooid'],
     ['Databrokers controleren', 'Nog niet gebouwd'],
     ['Openbare internetbronnen onderzoeken', 'Overgeslagen'],
-    ['Blootstelling van persoonsgegevens controleren', 'Voltooid'],
-    ['Bevindingen verifiëren', 'Voltooid'],
+    ['Mogelijke blootstelling beoordelen', 'Voltooid'],
+    ['Bewijs controleren', 'Voltooid'],
   ]);
 
   const text = READABLE(html);
   assert.match(text, /2 datalekken gevonden bij XposedOrNot\./);
   assert.match(text, /Niet onderzocht: dat kan alleen in je eigen account, op je eigen naam\./);
-  assert.match(text, /Inloggegevens in 1 lek, telefoonnummers in 1 lek\./);
+  assert.match(text, /De lekken bevatten soorten gegevens als: inloggegevens \(in 1 lek\), telefoonnummers \(in 1 lek\)\./);
+  assert.match(text, /Of jouw eigen gegevens daarbij zaten, melden de bronnen niet\./);
   // LinkedIn heeft bij XposedOrNot geen link: dat meldt de controle in plaats van het te verzwijgen.
-  assert.match(text, /2 bevindingen gecontroleerd op bron, datum en zekerheid\. Let op: 1 zonder directe link\./);
+  assert.match(text, /2 bevindingen gecontroleerd op bron, datum en beoordeling\. Let op: 1 zonder directe link\./);
 });
 
 test('bij elk lek op de startpagina staat dezelfde bron, datum en zekerheid als in een account', async (t) => {
@@ -227,7 +228,7 @@ test('bij elk lek op de startpagina staat dezelfde bron, datum en zekerheid als 
   }
 });
 
-test('geen lek gevonden: goed nieuws, en er valt niets te verifiëren', async (t) => {
+test('geen lek gevonden: goed nieuws, en er valt geen bewijs te controleren', async (t) => {
   const { hibp } = freeSite({ email: () => jsonResponse(404, { Error: 'Not found', email: null }) });
   const { base } = await startServer(t, { hibp });
 

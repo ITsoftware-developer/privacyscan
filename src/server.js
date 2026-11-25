@@ -4,9 +4,11 @@ import { createApp } from './app.js';
 import { createBreachCheck, parseFreeBreachCheck } from './breach-check.js';
 import { openDatabase, removeExpired } from './db.js';
 import { createHibp } from './hibp.js';
+import { prepareStorage } from './housekeeping.js';
 import { createMailer } from './mail.js';
 import { parseOwnerEmail } from './owner.js';
-import { createSearch } from './search.js';
+import { WEB_RESULT_MINUTES } from './retention.js';
+import { createSearch, parseStorageRights } from './search.js';
 import { createXon } from './xon.js';
 
 function stopWith(message) {
@@ -68,10 +70,16 @@ if (production && !hasHibpKey && freeCheck) {
   console.warn('Let op: de gratis dienst XposedOrNot is bedoeld voor persoonlijk gebruik en weinig verkeer (25 controles per uur, 100 per dag voor de hele site).');
 }
 
-// De zoekdienst voor je naam. Nu alleen "demo" (nepdata).
+// De zoekdienst voor je naam: Brave Search zodra er een BRAVE_API_KEY is. Zonder zoekdienst zoekt
+// de app niet op het web, en verzint hij niets: de pagina's zeggen dat eerlijk. Alleen met
+// SEARCH_PROVIDER=demo krijg je nepdata, om de werking te zien. De sleutel en de zoekopdrachten
+// (die je naam en woonplaats bevatten) komen nergens in een logboek.
 let search;
 try {
-  search = createSearch(process.env.SEARCH_PROVIDER || 'demo');
+  search = createSearch(process.env.SEARCH_PROVIDER, {
+    braveKey: process.env.BRAVE_API_KEY,
+    storageRights: parseStorageRights(process.env.BRAVE_STORAGE_RIGHTS),
+  });
 } catch (error) {
   stopWith(error.message);
 }
@@ -87,10 +95,14 @@ try {
 const db = openDatabase(join(import.meta.dirname, '..', 'data', 'privacyscan.db'));
 const app = createApp({ db, production, contact, mailer, baseUrl, hibp, search, ownerEmail });
 
-// Elke minuut verlopen sessies en tellers wissen, zodat we niets langer
+// Bij het starten: verzonnen demo-resultaten wissen als er een andere zoekdienst is, resultaten
+// die niet mogen blijven een einddatum geven, en wat verlopen is meteen wissen (zie housekeeping.js).
+const { purged } = prepareStorage(db, search);
+if (purged > 0) console.log(`Verzonnen demo-resultaten van een eerdere versie gewist: ${purged}.`);
+
+// Daarna elke minuut verlopen sessies, tellers en webresultaten wissen, zodat we niets langer
 // bewaren dan in de privacyverklaring staat. (unref: de timer houdt het
 // programma niet in leven als het verder klaar is.)
-removeExpired(db);
 setInterval(() => removeExpired(db), 60 * 1000).unref();
 
 app.listen(port, host, (error) => {
@@ -103,6 +115,16 @@ app.listen(port, host, (error) => {
     console.log(ownerEmail
       ? 'Zoeken op naam staat uit, behalve voor de beheerder (OWNER_EMAIL).'
       : 'Zoeken op naam staat uit. Zet OWNER_EMAIL in je .env om het alleen voor jezelf aan te zetten.');
+  }
+  if (!search) {
+    console.log('Zoekdienst: niet ingesteld. De app zoekt niet op het web en verzint niets. Zet BRAVE_API_KEY in je .env voor echte resultaten.');
+  } else if (search.isDemo) {
+    console.log('Zoekdienst: DEMO met verzonnen nepdata. Haal SEARCH_PROVIDER=demo weg en zet een BRAVE_API_KEY voor echte resultaten.');
+    if (process.env.BRAVE_API_KEY) {
+      console.log('Let op: er staat wel een BRAVE_API_KEY in je .env, maar SEARCH_PROVIDER=demo staat nog aan, dus Brave wordt niet gebruikt. Haal die regel uit je .env.');
+    }
+  } else {
+    console.log(`Zoekdienst: ${search.label}. Je naam en woonplaats gaan als zoekopdracht naar deze dienst. ${search.retainsResults ? 'Resultaten worden bewaard (BRAVE_STORAGE_RIGHTS=on).' : `Resultaten blijven maximaal ${WEB_RESULT_MINUTES} minuten bewaard.`}`);
   }
   if (hasHibpKey) {
     console.log('Datalekken: via Have I Been Pwned, met je eigen sleutel.');

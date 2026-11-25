@@ -154,8 +154,11 @@ test('een scan bewaart de resultaten als "nog te beoordelen" en toont ze met uit
   assert.deepEqual(statuses(db), THREE.map(({ url }) => [url, 'new']));
 
   const html = await page(base, cookie, '/resultaten?gescand=web');
-  assert.match(html, /Gezocht: 3 resultaten gevonden, waarvan 3 nieuw\. Beoordeel ze hieronder\./);
-  assert.match(html, /<span class="badge">3 gevonden<\/span>/);
+  assert.match(html, /Gezocht: 3 mogelijke vermeldingen gevonden, waarvan 3 nieuw\. Beoordeel ze hieronder: het zegt niet dat ze over jou gaan\./);
+  assert.match(html, /<span class="badge">3 mogelijke vermeldingen<\/span>/);
+  // Het zijn mogelijke vermeldingen, geen vondsten: pas jouw "Dit ben ik" maakt er iets van jou van.
+  assert.match(html, /Dit zijn <strong>mogelijke<\/strong> vermeldingen van je naam, geen bewijs dat ze over jou gaan\./);
+  assert.match(html, /pas bij "Dit ben ik"\s+beschouwen we een resultaat als van jou/);
   assert.match(html, /Laatst gezocht op [^<]+ naar <code>&#34;Anna de Vries&#34;<\/code>/);
   assert.match(html, /Nog te beoordelen: 3\./);
 
@@ -196,7 +199,7 @@ test('een zoekdienst die niets vindt geeft een eerlijke melding', async (t) => {
   assert.equal((await scan(base, cookie)).status, 303);
   const html = await page(base, cookie, '/resultaten?gescand=web');
   assert.match(html, /De zoekdienst vond niets bij deze zoekopdracht\./);
-  assert.match(html, /<span class="badge">0 gevonden<\/span>/);
+  assert.doesNotMatch(html, /mogelijke vermelding(en)?<\/span>/); // geen telling van niets
   assert.doesNotMatch(html, /class="choices"/);
 
   const dashboard = await page(base, cookie, '/dashboard');
@@ -216,7 +219,7 @@ test('opnieuw zoeken houdt je keuzes en meldt alleen wat nieuw is', async (t) =>
   assert.deepEqual(statuses(db), [[CLUB.url, 'mine'], [GIDS.url, 'new'], [NAAMGENOOT.url, 'new']]);
   assert.equal(count(db, 'findings'), 3);
   const html = await page(base, cookie, '/resultaten?gescand=web');
-  assert.match(html, /Gezocht: 3 resultaten gevonden, waarvan 1 nieuw\./);
+  assert.match(html, /Gezocht: 3 mogelijke vermeldingen gevonden, waarvan 1 nieuw\./);
   assert.match(html, /Nieuwe titel van de club/);
   assert.match(formFor(html, idOf(db, CLUB.url)), /is-active/);
 });
@@ -268,7 +271,7 @@ test('je keuze per resultaat wordt bewaard en zichtbaar gemaakt', async (t) => {
       assert.match(button(form, value), new RegExp(`aria-pressed="${active}"`), `${id}: ${value}`);
     }
   }
-  assert.match(html, /1 resultaat gemarkeerd als "Dit ben ik"\./);
+  assert.match(html, /1 resultaat door jou bevestigd als "Dit ben ik"\./);
   assert.doesNotMatch(html, /Nog te beoordelen/);
 });
 
@@ -277,11 +280,11 @@ test('je mag van gedachten veranderen', async (t) => {
   await scan(base, cookie);
 
   await choose(base, cookie, 1, 'mine');
-  assert.match(await page(base, cookie), /1 resultaat gemarkeerd als "Dit ben ik"\./);
+  assert.match(await page(base, cookie), /1 resultaat door jou bevestigd als "Dit ben ik"\./);
   await choose(base, cookie, 1, 'not_mine');
   assert.equal(statuses(db)[0][1], 'not_mine');
   const html = await page(base, cookie);
-  assert.match(html, /0 resultaten gemarkeerd als "Dit ben ik"\./);
+  assert.match(html, /0 resultaten door jou bevestigd als "Dit ben ik"\./);
   assert.match(html, /Nog te beoordelen: 2\./);
 });
 
@@ -466,7 +469,7 @@ test('de kaart "Waar sta je online?" volgt je voortgang', async (t) => {
   let html = await page(base, cookie, '/dashboard');
   assert.match(html, /We zoeken op jouw naam, <strong>Anna de Vries<\/strong>\./);
   assert.match(html, /<a href="\/profiel">Woonplaats toevoegen<\/a>/);
-  assert.match(html, /Voorbeeldstand: er is nog geen echte zoekdienst gekoppeld/);
+  assert.match(html, /Voorbeeldstand: dit is de demo\. Je krijgt nepdata en er gaat niets naar buiten\./);
   assert.match(html, /action="\/scan\/web"/);
   assert.doesNotMatch(html, /Laatst gezocht/);
 
@@ -491,7 +494,8 @@ test('een echte zoekdienst is eerlijk over wat er verstuurd wordt, en toont geen
   const { base, cookie } = await setup(t, { isDemo: false });
 
   const dashboard = await page(base, cookie, '/dashboard');
-  assert.match(dashboard, /Daarvoor sturen we je naam naar de zoekdienst\./);
+  assert.match(dashboard, /Daarvoor sturen we je naam als zoekopdracht naar\s+nep\./);
+  assert.match(dashboard, /Wat we vinden zijn mogelijke vermeldingen: jij beoordeelt of ze van jou zijn\./);
   assert.doesNotMatch(dashboard, /Voorbeeldstand/);
 
   await scan(base, cookie);
@@ -504,6 +508,6 @@ test('bij een demo-zoekdienst staat er duidelijk dat het nepdata is', async (t) 
   await scan(base, cookie);
 
   const html = await page(base, cookie, '/resultaten?gescand=web');
-  assert.match(html, /<strong>Voorbeeldresultaten\.<\/strong> Er is nog geen echte zoekdienst gekoppeld/);
+  assert.match(html, /<strong>Voorbeeldresultaten\.<\/strong> Dit is de demo: nepdata om te laten zien hoe het werkt/);
   assert.match(html, /Er is niets naar buiten gestuurd/);
 });

@@ -2,6 +2,7 @@
 import { createApp } from '../src/app.js';
 import { openDatabase } from '../src/db.js';
 import { createMailer } from '../src/mail.js';
+import { createDemoSearch } from '../src/search.js';
 
 export const ANNA = {
   naam: 'Anna de Vries',
@@ -12,11 +13,12 @@ export const ANNA = {
 
 // Start de app met een lege database in het geheugen (of met de database die je
 // meegeeft). De wachtwoordcheck tegen datalekken staat uit, zodat de tests
-// zonder internet werken, en mails komen in een testpostvak (mailer.outbox).
+// zonder internet werken, en mails komen in een testpostvak (mailer.outbox). De app krijgt de
+// demo-zoekdienst, tenzij je zelf een zoekdienst meegeeft (search: null = geen zoekdienst).
 export async function startServer(t, options = {}) {
   const db = options.db ?? openDatabase(':memory:');
   const mailer = options.mailer ?? createMailer();
-  const app = createApp({ pwnedCheck: async () => false, ...options, mailer, db });
+  const app = createApp({ pwnedCheck: async () => false, search: createDemoSearch(), ...options, mailer, db });
   const server = await new Promise((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
   });
@@ -183,11 +185,15 @@ export function fakeXonFetch({
 
 // Een nepzoekdienst voor in de tests. Hij onthoudt de zoekopdrachten (calls) en geeft
 // de resultaten in `results` terug (een lijst, of een functie die per opdracht een
-// lijst geeft). Met `error` gooit hij die fout.
-export function fakeSearch({ results = [], error = null, isDemo = false, name = 'nep' } = {}) {
+// lijst geeft). Met `error` gooit hij die fout. Met `retainsResults: false` gedraagt hij zich als
+// Brave: de resultaten mogen maar kort bewaard worden.
+export function fakeSearch({
+  results = [], error = null, isDemo = false, name = 'nep', retainsResults = true,
+} = {}) {
   const fake = {
     name,
     isDemo,
+    retainsResults,
     results,
     error,
     calls: [],
@@ -195,6 +201,21 @@ export function fakeSearch({ results = [], error = null, isDemo = false, name = 
       fake.calls.push(request);
       if (fake.error) throw fake.error;
       return typeof fake.results === 'function' ? fake.results(request) : fake.results;
+    },
+  };
+  return fake;
+}
+
+// Een nep-fetch voor Brave Search, voor de tests die de hele site (of de koppeling) met Brave laten
+// werken zonder iets naar het internet te sturen. Hij onthoudt elke aanvraag (calls) en antwoordt met
+// wat `answer(url, init)` teruggeeft.
+export function fakeBraveFetch(answer) {
+  const fake = {
+    calls: [],
+    answer,
+    async impl(url, init) {
+      fake.calls.push({ url: String(url), init });
+      return fake.answer(url, init);
     },
   };
   return fake;

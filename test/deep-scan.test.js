@@ -51,15 +51,19 @@ test('een Deep Scan zonder problemen: wat bestaat is voltooid, en de rest zegt d
   assert.equal(run.ranAt, T1);
   assert.deepEqual(run.steps.map((item) => item.title), [
     'Datalekdatabases onderzoeken', 'Databrokers controleren', 'Openbare internetbronnen onderzoeken',
-    'Blootstelling van persoonsgegevens controleren', 'Bevindingen verifiëren',
+    'Mogelijke blootstelling beoordelen', 'Bewijs controleren',
   ]);
   assert.equal(step(run, 'datalekken').note, '2 datalekken gevonden bij Have I Been Pwned, waarvan 2 nieuw.');
   assert.match(step(run, 'databrokers').note, /Nog niet gebouwd \(fase 3\)/);
-  assert.match(step(run, 'web').note, /3 resultaten gevonden, waarvan 3 nieuw/);
-  assert.equal(step(run, 'blootstelling').note, 'Inloggegevens in 2 lekken.');
+  assert.match(step(run, 'web').note, /3 mogelijke vermeldingen gevonden, waarvan 3 nieuw/);
+  assert.equal(
+    step(run, 'blootstelling').note,
+    'De lekken bevatten soorten gegevens als: inloggegevens (in 2 lekken). Of jouw eigen gegevens daarbij zaten, melden de bronnen niet.',
+  );
   assert.equal(
     step(run, 'verificatie').note,
-    '5 bevindingen gecontroleerd op bron, datum en zekerheid: elk heeft een bron, een datum en een zekerheid.',
+    '5 bevindingen gecontroleerd op bron, datum en beoordeling: elk heeft een bron, een datum en een beoordeling. '
+      + 'Dit controleert ons eigen bewijs, niet of de inhoud van de bron klopt: dat zie je pas als je de link opent.',
   );
   assert.deepEqual(run.exposure.map((group) => [group.id, group.breaches]), [['inloggegevens', ['Adobe', 'Gawker']]]);
 
@@ -85,12 +89,14 @@ test('elke bevinding krijgt een bron, een datum en een zekerheid, met uitleg', a
   for (const item of web) {
     assert.equal(item.source_id, 'brave');
     assert.equal(item.checked_at, T1);
-    assert.ok(['hoog', 'gemiddeld', 'laag'].includes(item.confidence), item.title);
+    assert.ok(['hoog', 'gemiddeld', 'laag', 'geen'].includes(item.confidence), item.title);
     assert.ok(item.confidence_note.length > 20, item.title);
   }
   const named = (title) => web.find((item) => item.title === title);
-  assert.equal(named(GIDS.title).confidence, 'hoog'); // je naam én Utrecht staan erin
-  assert.equal(named(CLUB.title).confidence, 'gemiddeld'); // alleen je naam
+  // Een naam, ook met woonplaats, blijft een mogelijke overeenkomst: nooit "hoog".
+  assert.equal(named(GIDS.title).confidence, 'gemiddeld'); // je naam én Utrecht staan erin
+  assert.equal(named(CLUB.title).confidence, 'laag'); // alleen je naam
+  assert.ok(web.every((item) => item.confidence !== 'hoog'));
 });
 
 test('de demo-zoekdienst is "Voltooid (demo)": de resultaten zijn verzonnen en dat staat erbij', async () => {
@@ -301,12 +307,14 @@ test('de verificatie is echt: een bevinding zonder bewijs valt op in het rapport
 
   const verification = step(run, 'verificatie');
   assert.equal(verification.status, 'done');
-  assert.match(verification.note, /^2 bevindingen gecontroleerd op bron, datum en zekerheid\. Let op: /);
+  assert.match(verification.note, /^2 bevindingen gecontroleerd op bron, datum en beoordeling\. Let op: /);
   assert.match(verification.note, /1 zonder bron/);
   assert.match(verification.note, /1 zonder datum/);
-  assert.match(verification.note, /1 zonder beoordeling van de zekerheid/);
+  assert.match(verification.note, /1 zonder beoordeling/);
   assert.match(verification.note, /1 zonder directe link/);
   assert.doesNotMatch(verification.note, /elk heeft een bron/);
+  // De stap belooft niet meer dan hij doet: hij controleert ons eigen bewijs, niet de bron zelf.
+  assert.match(verification.note, /niet of de inhoud van de bron klopt/);
 });
 
 test('het bewaarde rapport bevat geen e-mailadres, naam of woonplaats', async () => {
@@ -424,8 +432,8 @@ test('na de Deep Scan zie je het rapport: elke stap met zijn eerlijke stand', as
     { title: 'Datalekdatabases onderzoeken', tone: 'ok', label: 'Voltooid' },
     { title: 'Databrokers controleren', tone: 'idle', label: 'Nog niet gebouwd' },
     { title: 'Openbare internetbronnen onderzoeken', tone: 'ok', label: 'Voltooid' },
-    { title: 'Blootstelling van persoonsgegevens controleren', tone: 'ok', label: 'Voltooid' },
-    { title: 'Bevindingen verifiëren', tone: 'ok', label: 'Voltooid' },
+    { title: 'Mogelijke blootstelling beoordelen', tone: 'ok', label: 'Voltooid' },
+    { title: 'Bewijs controleren', tone: 'ok', label: 'Voltooid' },
   ]);
   assert.match(text, /1 datalek gevonden bij Have I Been Pwned, waarvan 1 nieuw\./);
   assert.match(text, /Nog niet gebouwd \(fase 3\)/);
@@ -438,10 +446,12 @@ test('het rapport zegt welke soorten gegevens gelekt zijn, nooit de gegevens zel
   await deep(base, cookie);
 
   const text = READABLE(await body(base, '/resultaten', cookie));
-  assert.match(text, /Blootgestelde gegevens 1 soort Inloggegevens/);
-  assert.match(text, /Inloggegevens Gelekt bij: Adobe/);
-  assert.match(text, /Gebruik het wachtwoord van die diensten nergens meer/);
-  assert.match(text, /We zien welke soorten gegevens zijn gelekt, niet de gegevens zelf\./);
+  assert.match(text, /Mogelijk blootgestelde gegevens 1 soort Inloggegevens/);
+  assert.match(text, /Inloggegevens Zat in: Adobe/);
+  assert.match(text, /Had je bij deze diensten een account, gebruik dat wachtwoord dan nergens meer/);
+  // We beweren niet dat dit van jou gelekt is: een lek zegt welke soorten gegevens erin zaten.
+  assert.match(text, /We zien welke soorten gegevens een lek bevatte, niet de gegevens zelf en niet wat er van jou in stond/);
+  assert.doesNotMatch(text, /in handen van anderen/);
 });
 
 test('bij elke bevinding staat de bron, de datum van het onderzoek en de zekerheid', async (t) => {
@@ -456,18 +466,23 @@ test('bij elke bevinding staat de bron, de datum van het onderzoek en de zekerhe
   for (const block of blocks) {
     assert.match(block, /<dt>Bron<\/dt>/);
     assert.match(block, /<dt>Onderzocht op<\/dt>/);
-    assert.match(block, /<dt>Zekerheid<\/dt>/);
+    assert.match(block, /<dt>Zekerheid<\/dt>|<dt>Overeenkomst met je naam<\/dt>/);
     assert.doesNotMatch(block, /onbekend|Niet beoordeeld/);
   }
+  // Een datalek heeft een zekerheid, een webresultaat een overeenkomst en jouw eigen oordeel.
+  assert.equal(blocks.filter((block) => /<dt>Zekerheid<\/dt>/.test(block)).length, 1);
+  assert.equal(blocks.filter((block) => /<dt>Jouw oordeel<\/dt>/.test(block)).length, 2);
 
   const text = READABLE(html);
   assert.match(text, /Bron Have I Been Pwned Onderzocht op \d+ \w+ \d{4} om \d{2}:\d{2} Zekerheid Hoog · De bron zegt dat dit e-mailadres in dit lek staat/);
-  // De telefoongids noemt je naam én Utrecht, de club alleen je naam.
-  assert.match(text, /Zekerheid Hoog · Je volledige naam én je woonplaats staan in de titel of het fragment/);
-  assert.match(text, /Zekerheid Gemiddeld · Je volledige naam staat erin, je woonplaats niet/);
+  // De telefoongids noemt je naam én Utrecht, de club alleen je naam: allebei een mogelijke overeenkomst.
+  assert.match(text, /Overeenkomst met je naam Mogelijke overeenkomst · Je volledige naam én je woonplaats staan in de titel of het fragment/);
+  assert.match(text, /Overeenkomst met je naam Zwakke overeenkomst · Je volledige naam staat erin, je woonplaats niet/);
+  assert.match(text, /Jouw oordeel Nog niet beoordeeld/);
+  assert.doesNotMatch(text, /Sterke overeenkomst/); // een naam alleen, ook met woonplaats, is nooit "sterk"
 });
 
-test('een bevinding uit de tijd voor het bewijs zegt eerlijk dat bron en zekerheid ontbreken', async (t) => {
+test('een bevinding uit de tijd voor het bewijs zegt eerlijk dat bron en beoordeling ontbreken', async (t) => {
   const { base, cookie, db } = await site(t);
   await deep(base, cookie);
   // Zo ziet een webresultaat eruit dat bewaard is voordat er bewijs bij hoorde.
@@ -475,7 +490,7 @@ test('een bevinding uit de tijd voor het bewijs zegt eerlijk dat bron en zekerhe
               WHERE title = ?`).run(CLUB.title);
 
   const text = READABLE(await body(base, '/resultaten', cookie));
-  assert.match(text, /Bron niet bekend \(gevonden voor deze functie bestond\) Onderzocht op onbekend Zekerheid Niet beoordeeld/);
+  assert.match(text, /Bron niet bekend \(gevonden voor deze functie bestond\) Onderzocht op onbekend Overeenkomst met je naam Niet beoordeeld/);
 });
 
 test('zonder Deep Scan staat er op de resultatenpagina en het dashboard dat je er nog geen deed', async (t) => {
@@ -483,7 +498,7 @@ test('zonder Deep Scan staat er op de resultatenpagina en het dashboard dat je e
 
   const results = await body(base, '/resultaten', cookie);
   assert.match(READABLE(results), /Deep Scan Nog niet gedaan Je hebt nog geen Deep Scan gedaan\./);
-  assert.doesNotMatch(results, /Rapport van je laatste Deep Scan|Blootgestelde gegevens/);
+  assert.doesNotMatch(results, /Rapport van je laatste Deep Scan|Mogelijk blootgestelde gegevens/);
   assert.deepEqual(stepsIn(results), []);
 
   const dashboard = await body(base, '/dashboard', cookie);

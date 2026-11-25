@@ -449,3 +449,32 @@ test('wat we niet kennen, is Have I Been Pwned (zo blijven oude resultaten klopp
   assert.equal(sourceHost(SOURCES.xon), 'xposedornot.com');
   assert.equal(sourceHost(SOURCES.hibp), 'haveibeenpwned.com');
 });
+
+// --- De grootte van de lijst (voor `npm run controleer`) ----------------------------------
+
+test('listSize leest de lijst met lekken en geeft het aantal terug, ook als het adres nergens in staat', async () => {
+  const fetcher = fakeFetch({ email: () => json(404, { Error: 'Not found' }) });
+  const { xon } = xonWith(fetcher);
+
+  const size = await xon.listSize();
+  assert.ok(Number.isInteger(size) && size >= 2, `aantal lekken: ${size}`);
+  assert.equal(fetcher.count('/v1/breaches'), 1);
+  assert.equal(fetcher.count('/v1/check-email'), 0); // het adres is er niet bij nodig
+
+  // De lijst blijft in het geheugen: een controle erna vraagt hem niet opnieuw.
+  await xon.listSize();
+  assert.deepEqual(await xon.breachesFor(ADDRESS), []);
+  assert.equal(fetcher.count('/v1/breaches'), 1);
+});
+
+test('listSize geeft dezelfde fouten als de rest: onbereikbaar, limiet en onleesbaar formaat', async () => {
+  for (const [antwoord, code] of [
+    [() => json(500, {}), 'unavailable'],
+    [() => json(429, {}), 'rate_limited'],
+    [() => json(200, { iets: 'anders' }), 'unexpected'],
+    [() => json(200, { exposedBreaches: [] }), 'unexpected'], // een lijst zonder lekken kunnen we niet gebruiken
+  ]) {
+    const { xon } = xonWith(fakeFetch({ list: antwoord }));
+    assert.equal(await codeOf(xon.listSize()), code);
+  }
+});

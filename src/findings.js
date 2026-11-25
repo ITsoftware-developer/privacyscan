@@ -1,7 +1,12 @@
 // Bewaart en leest wat een scan vindt (de tabellen findings, scans en scan_runs).
 import { BREACH_CONFIDENCE } from './confidence.js';
 import { inTransaction } from './db.js';
+import { WEB_RESULT_MS, webKey } from './retention.js';
 import { sourceById } from './sources.js';
+
+// Een bevinding telt alleen mee zolang hij mag blijven (zie retention.js). removeExpired in db.js
+// wist ze ook echt, maar tot dat gebeurd is, tonen en tellen we ze al niet meer.
+const LIVE = '(expires_at IS NULL OR expires_at > ?)';
 
 // De keuzes die je per webresultaat hebt. 'new' is "nog niet beoordeeld".
 export const WEB_CHOICES = {
@@ -65,55 +70,77 @@ export function saveBreaches(db, userId, breaches, now = Date.now()) {
   });
 }
 
-// Bewaart webresultaten ({ title, url, snippet }). Nieuwe krijgen de status 'new';
-// een resultaat dat je al beoordeeld had, houdt zijn keuze. Geeft terug hoeveel er nieuw waren.
+// Bewaart webresultaten ({ title, url, snippet }). Nieuwe krijgen de keuze die je eerder bij dit
+// adres maakte (zie web_choices), of anders de status 'new'; een resultaat dat je al beoordeeld
+// had, houdt zijn keuze. Geeft terug hoeveel er nieuw waren: nog niet eerder gezien en nog niet
+// door jou beoordeeld.
 //
-// `evidence` zegt waar de resultaten vandaan komen: { sourceId, rate }. `rate(result)` geeft
-// { level, note }: hoe zeker het is dat het resultaat over jou gaat (zie confidence.js). Bij
-// een nieuwe zoekronde wordt dat opnieuw beoordeeld, want je woonplaats kan veranderd zijn.
+// `evidence` zegt waar de resultaten vandaan komen en hoe lang ze mogen blijven:
+//   sourceId    welke zoekdienst het gaf
+//   rate        rate(result) geeft { level, note }: hoe zeker het is dat het resultaat over jou gaat
+//               (zie confidence.js). Bij een nieuwe zoekronde wordt dat opnieuw beoordeeld, want je
+//               woonplaats kan veranderd zijn.
+//   expiresAt   tot wanneer we de resultaten mogen bewaren (ms), of null: zolang je account bestaat
 export function saveWebResults(db, userId, results, now = Date.now(), evidence = {}) {
-  const { sourceId = null, rate = null } = evidence;
+  const { sourceId = null, rate = null, expiresAt = null } = evidence;
   return inTransaction(db, () => {
-    const known = new Set(db
-      .prepare("SELECT source_key FROM findings WHERE user_id = ? AND kind = 'web'")
-      .all(userId)
+    const live = new Set(db
+      .prepare(`SELECT source_key FROM findings WHERE user_id = ? AND kind = 'web' AND ${LIVE}`)
+      .all(userId, now)
       .map((row) => row.source_key));
+    const choices = new Map(db
+      .prepare('SELECT url_key, status FROM web_choices WHERE user_id = ?')
+      .all(userId)
+      .map((row) => [row.url_key, row.status]));
     const upsert = db.prepare(`
       INSERT INTO findings (user_id, kind, source_key, title, url, details, status, found_at, updated_at,
-                            source_id, confidence, confidence_note, checked_at)
-      VALUES (?, 'web', ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?, ?)
+                            source_id, confidence, confidence_note, checked_at, expires_at)
+      VALUES (?, 'web', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (user_id, kind, source_key) DO UPDATE SET
         title = excluded.title, details = excluded.details, updated_at = excluded.updated_at,
+        found_at = CASE WHEN findings.expires_at IS NOT NULL AND findings.expires_at <= excluded.found_at
+                        THEN excluded.found_at ELSE findings.found_at END,
         source_id = COALESCE(excluded.source_id, findings.source_id),
         confidence = COALESCE(excluded.confidence, findings.confidence),
         confidence_note = COALESCE(excluded.confidence_note, findings.confidence_note),
-        checked_at = excluded.checked_at`);
+        checked_at = excluded.checked_at, expires_at = excluded.expires_at`);
 
     let added = 0;
     for (const result of results) {
       const { title, url, snippet } = result;
       const rating = rate ? rate(result) : null;
+      const choice = choices.get(webKey(url));
       upsert.run(
-        userId, url, title, url, JSON.stringify({ snippet }), now, now,
-        sourceId, rating?.level ?? null, rating?.note ?? null, now,
+        userId, url, title, url, JSON.stringify({ snippet }), choice ?? 'new', now, now,
+        sourceId, rating?.level ?? null, rating?.note ?? null, now, expiresAt,
       );
-      if (!known.has(url)) added += 1;
-      known.add(url);
+      if (!live.has(url) && choice === undefined) added += 1;
+      live.add(url);
     }
     return added;
   });
+}
+
+// Zorgt dat resultaten van deze zoekdienst niet langer blijven staan dan mag: wat nog zonder
+// einddatum bewaard staat (bijvoorbeeld uit de tijd dat je een abonnement met opslagrechten had),
+// verloopt over een half uur. server.js doet dit bij het starten, voor een dienst die bewaren niet toestaat.
+export function limitRetention(db, sourceId, now = Date.now()) {
+  const result = db
+    .prepare("UPDATE findings SET expires_at = ? WHERE kind = 'web' AND source_id = ? AND expires_at IS NULL")
+    .run(now + WEB_RESULT_MS, sourceId);
+  return Number(result.changes);
 }
 
 // Alle resultaten van één gebruiker: datalekken (nieuwste lek eerst) en webresultaten.
 // Webresultaten staan op de volgorde van de zoekdienst (de beste eerst), met wat bij
 // een nieuwe zoekronde nieuw was bovenaan. De volgorde hangt niet af van je keuzes:
 // anders springt een resultaat weg zodra je erop klikt.
-export function listFindings(db, userId) {
+export function listFindings(db, userId, now = Date.now()) {
   const rows = db
     .prepare(`SELECT id, kind, title, url, details, status, found_at,
-                     source_id, confidence, confidence_note, checked_at
-              FROM findings WHERE user_id = ? ORDER BY found_at DESC, id ASC`)
-    .all(userId)
+                     source_id, confidence, confidence_note, checked_at, expires_at
+              FROM findings WHERE user_id = ? AND ${LIVE} ORDER BY found_at DESC, id ASC`)
+    .all(userId, now)
     .map((row) => ({ ...row, details: parseDetails(row.details) }));
 
   const byDate = (a, b) => String(b.details.breachDate ?? '').localeCompare(String(a.details.breachDate ?? ''));
@@ -123,21 +150,31 @@ export function listFindings(db, userId) {
   };
 }
 
-// Zet je keuze bij een webresultaat. Alleen van jezelf: een id van iemand anders
-// (of van een datalek) verandert niets en geeft false.
-export function setWebStatus(db, userId, id, status) {
-  const result = db
-    .prepare("UPDATE findings SET status = ?, updated_at = ? WHERE id = ? AND user_id = ? AND kind = 'web'")
-    .run(status, Date.now(), id, userId);
-  return Number(result.changes) > 0;
+// Zet je keuze bij een webresultaat, en onthoudt hem bij het adres (web_choices), zodat hij blijft
+// bestaan als het resultaat zelf verloopt. Alleen van jezelf: een id van iemand anders (of van een
+// datalek, of van een resultaat dat al verlopen is) verandert niets en geeft false.
+export function setWebStatus(db, userId, id, status, now = Date.now()) {
+  return inTransaction(db, () => {
+    const row = db
+      .prepare(`SELECT url FROM findings WHERE id = ? AND user_id = ? AND kind = 'web' AND ${LIVE}`)
+      .get(id, userId, now);
+    if (!row) return false;
+    db.prepare('UPDATE findings SET status = ?, updated_at = ? WHERE id = ? AND user_id = ?')
+      .run(status, now, id, userId);
+    db.prepare(`
+      INSERT INTO web_choices (user_id, url_key, status, decided_at) VALUES (?, ?, ?, ?)
+      ON CONFLICT (user_id, url_key) DO UPDATE SET status = excluded.status, decided_at = excluded.decided_at`)
+      .run(userId, webKey(row.url), status, now);
+    return true;
+  });
 }
 
 // Aantallen voor het dashboard.
-export function countFindings(db, userId) {
+export function countFindings(db, userId, now = Date.now()) {
   const counts = { breaches: 0, web: 0, webNew: 0, webMine: 0 };
   const rows = db
-    .prepare('SELECT kind, status, COUNT(*) AS n FROM findings WHERE user_id = ? GROUP BY kind, status')
-    .all(userId);
+    .prepare(`SELECT kind, status, COUNT(*) AS n FROM findings WHERE user_id = ? AND ${LIVE} GROUP BY kind, status`)
+    .all(userId, now);
   for (const { kind, status, n } of rows) {
     if (kind === 'breach') counts.breaches += n;
     else {

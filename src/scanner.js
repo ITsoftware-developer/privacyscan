@@ -16,7 +16,8 @@ import {
 } from './engine.js';
 import { lastScan, listFindings, saveRun } from './findings.js';
 import { ScanError } from './scan-error.js';
-import { scanBreaches, scanWeb } from './scans.js';
+import { scanBreaches, scanWeb, searchSourceId } from './scans.js';
+import { WEB_RESULT_MINUTES } from './retention.js';
 import { sourceById } from './sources.js';
 
 // Wat we bij een fout in het rapport zetten. Geen technische details, en nooit een adres.
@@ -28,19 +29,27 @@ const REASONS = {
   unavailable: 'De bron was niet bereikbaar.',
   unexpected: 'De bron gaf een onverwacht antwoord.',
   search_failed: 'De zoekdienst gaf een fout.',
+  search_bad_key: 'De zoekdienst accepteerde de sleutel niet.',
+  search_rate_limited: 'De zoekdienst staat nu geen aanvragen meer toe (limiet of tegoed op). Probeer het later nog eens.',
+  search_unavailable: 'De zoekdienst was niet bereikbaar.',
+  search_unexpected: 'De zoekdienst gaf een onverwacht antwoord.',
+  no_search: 'Er is geen zoekdienst ingesteld, dus er is niet op het web gezocht. Zet BRAVE_API_KEY in je .env (zie de README).',
   name_too_short: 'Je naam bevat te weinig letters om op te zoeken.',
   search_disabled: 'Zoeken op naam staat uit op een openbare site: een bevestigd e-mailadres bewijst niet dat de naam van jou is.',
 };
 
 // Bij deze fouten bestond de bron wel, maar kwamen we er niet bij.
-const UNREACHABLE = new Set(['bad_key', 'rate_limited', 'busy', 'unavailable', 'unexpected', 'search_failed']);
+const UNREACHABLE = new Set([
+  'bad_key', 'rate_limited', 'busy', 'unavailable', 'unexpected',
+  'search_failed', 'search_bad_key', 'search_rate_limited', 'search_unavailable', 'search_unexpected',
+]);
 // Bij deze fouten hebben we de bron niet eens geprobeerd.
-const NOT_TRIED = new Set(['no_key', 'name_too_short', 'search_disabled']);
+const NOT_TRIED = new Set(['no_key', 'no_search', 'name_too_short', 'search_disabled']);
 
 function fromError(error, sources) {
   if (error instanceof ScanError) {
     let status = 'skipped';
-    if (error.code === 'no_key') status = 'unavailable';
+    if (error.code === 'no_key' || error.code === 'no_search') status = 'unavailable';
     else if (UNREACHABLE.has(error.code)) status = 'unreachable';
     return {
       status,
@@ -72,14 +81,19 @@ async function breachStep({ db, user, hibp, now }) {
 }
 
 async function webStep({ db, user, search, allowWeb, now }) {
-  const sourceId = search.isDemo ? 'demo' : String(search.name ?? 'web');
+  // Zonder zoekdienst is er niets om te proberen: dat is "niet beschikbaar", geen mislukking.
+  if (!search) return fromError(new ScanError('no_search'), []);
+  const sourceId = searchSourceId(search);
   try {
-    const { found, added } = await scanWeb({ db, user, search, allowed: allowWeb, now });
+    const { found, added, expiresAt } = await scanWeb({ db, user, search, allowed: allowWeb, now });
     const demo = Boolean(search.isDemo);
     let text = found === 0
       ? 'De zoekdienst vond niets bij je naam.'
-      : `${found === 1 ? '1 resultaat' : `${found} resultaten`} gevonden${added > 0 ? `, waarvan ${added} nieuw` : ''}. Beoordeel ze zelf: veel zijn van naamgenoten.`;
-    if (demo) text = `Demo: ${found === 1 ? '1 verzonnen resultaat' : `${found} verzonnen resultaten`}. Er is nog geen echte zoekdienst gekoppeld.`;
+      : `${found === 1 ? '1 mogelijke vermelding' : `${found} mogelijke vermeldingen`} gevonden${added > 0 ? `, waarvan ${added} nieuw` : ''}. Beoordeel ze zelf: veel zijn van naamgenoten.`;
+    if (found > 0 && expiresAt !== null) {
+      text += ` De zoekdienst staat niet toe dat we resultaten bewaren: ze blijven ${WEB_RESULT_MINUTES} minuten zichtbaar, jouw keuzes blijven.`;
+    }
+    if (demo) text = `Demo: ${found === 1 ? '1 verzonnen resultaat' : `${found} verzonnen resultaten`}. Dit is nepdata; er is geen echte zoekdienst gebruikt.`;
     return { status: 'done', sources: [sourceId], demo, found, added, note: text };
   } catch (error) {
     return fromError(error, [sourceId]);

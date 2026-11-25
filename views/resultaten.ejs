@@ -26,7 +26,7 @@
 
     <article class="card" id="blootstelling">
       <header class="card-head">
-        <h2>Blootgestelde gegevens</h2>
+        <h2>Mogelijk blootgestelde gegevens</h2>
         <% if (run.exposure.length > 0) { %><span class="badge badge-warn"><%= run.exposure.length === 1 ? '1 soort' : `${run.exposure.length} soorten` %></span><% } %>
       </header>
       <% if (run.exposure.length === 0) { %>
@@ -36,13 +36,17 @@
           <% for (const group of run.exposure) { %>
             <li class="finding">
               <h3><%= group.label %></h3>
-              <p class="finding-meta">Gelekt bij: <%= group.breaches.join(', ') %></p>
+              <p class="finding-meta">Zat in: <%= group.breaches.join(', ') %></p>
               <p class="finding-text"><%= group.advice %></p>
             </li>
           <% } %>
         </ul>
       <% } %>
-      <p class="hint">We zien welke soorten gegevens zijn gelekt, niet de gegevens zelf. De bronnen geven die niet vrij.</p>
+      <p class="hint">
+        We zien welke soorten gegevens een lek bevatte, niet de gegevens zelf en niet wat er van jou in stond:
+        niet elk slachtoffer van een lek verloor elke soort gegeven. Of het over jouw gegevens gaat, kun je
+        alleen nagaan bij de dienst zelf.
+      </p>
     </article>
   <% } else { %>
     <article class="card" id="rapport">
@@ -83,7 +87,7 @@
                 <% if (breach.details.pwnCount) { %><%= breach.details.pwnCount.toLocaleString('nl-NL') %> accounts<% } %>
               </p>
               <% if (breach.details.dataClasses && breach.details.dataClasses.length) { %>
-                <ul class="chips" aria-label="Gelekte gegevens">
+                <ul class="chips" aria-label="Soorten gegevens in dit lek">
                   <% for (const item of breach.details.dataClasses) { %><li><%= dataClassLabel(item) %></li><% } %>
                 </ul>
               <% } %>
@@ -115,36 +119,76 @@
   <article class="card" id="web">
     <header class="card-head">
       <h2>Op het web</h2>
-      <% if (webScan) { %><span class="badge"><%= web.length %> gevonden</span><% } %>
+      <% if (webScan && web.length > 0) { %><span class="badge"><%= web.length === 1 ? '1 mogelijke vermelding' : web.length + ' mogelijke vermeldingen' %></span><% } %>
     </header>
 
+    <% if (!searchPolicy.configured) { %>
+      <p class="alert alert-warning notice-top" role="note">
+        <strong>Er is geen zoekdienst ingesteld.</strong> Daarom zoeken we niet op het web, en verzinnen we
+        ook niets. Zet <code>BRAVE_API_KEY</code> in je <code>.env</code> (zie de README) en start de site opnieuw.
+      </p>
+    <% } %>
+
     <% if (!webScan) { %>
-      <p class="card-text">Je hebt nog niet gezocht. Dat doe je op je <a href="/dashboard">dashboard</a>.</p>
+      <% if (searchPolicy.configured) { %>
+        <p class="card-text">Je hebt nog niet gezocht. Dat doe je op je <a href="/dashboard">dashboard</a>.</p>
+      <% } %>
     <% } else { %>
-      <% if (searchIsDemo) { %>
+      <% if (searchPolicy.isDemo) { %>
         <p class="alert alert-warning notice-top" role="note">
-          <strong>Voorbeeldresultaten.</strong> Er is nog geen echte zoekdienst gekoppeld, dus dit is
-          nepdata om te laten zien hoe het werkt. Er is niets naar buiten gestuurd.
+          <strong>Voorbeeldresultaten.</strong> Dit is de demo: nepdata om te laten zien hoe het werkt.
+          Er is niets naar buiten gestuurd.
         </p>
       <% } %>
       <p class="hint notice-top">
         Laatst gezocht op <%= formatDateTime(webScan.ran_at) %> naar <code><%= webScan.detail %></code>.
       </p>
 
-      <% if (web.length === 0) { %>
+      <% if (web.length === 0 && webScan.found_count > 0 && !searchPolicy.retains && !searchPolicy.isDemo) { %>
+        <p class="card-text">
+          De resultaten van die zoekopdracht zijn verlopen. De zoekdienst staat niet toe dat we ze bewaren,
+          dus ze blijven <%= searchPolicy.keepMinutes %> minuten staan. Zoek opnieuw op je
+          <a href="/dashboard">dashboard</a> om ze weer te zien. Wat je eerder koos (Dit ben ik, Dit ben ik niet),
+          onthouden we.
+        </p>
+      <% } else if (web.length === 0) { %>
         <p class="card-text">De zoekdienst vond niets bij deze zoekopdracht.</p>
       <% } else { %>
         <p class="card-text">
-          Beoordeel elk resultaat, dan houd je overzicht. Veel resultaten zijn van naamgenoten:
-          kies dan "Dit ben ik niet".
+          Dit zijn <strong>mogelijke</strong> vermeldingen van je naam, geen bewijs dat ze over jou gaan.
+          Naamgenoten komen veel voor. Open de pagina, en kies dan wat klopt: pas bij "Dit ben ik"
+          beschouwen we een resultaat als van jou.
         </p>
+        <% if (!searchPolicy.retains && !searchPolicy.isDemo) { %>
+          <% const until = Math.min(...web.map((item) => item.expires_at ?? Infinity)); %>
+          <% if (Number.isFinite(until)) { %>
+            <p class="hint">
+              De zoekdienst staat niet toe dat we resultaten bewaren. Deze resultaten blijven zichtbaar tot
+              uiterlijk <%= new Date(until).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }) %>.
+              Jouw keuzes blijven bewaard.
+            </p>
+          <% } %>
+        <% } %>
         <ul class="findings">
           <% for (const item of web) { %>
+            <% const info = describeWebResult(item, { ownEmail: user.email }); %>
             <li class="finding" id="resultaat-<%= item.id %>">
               <h3><a href="<%= item.url %>" target="_blank" rel="noopener noreferrer nofollow"><%= item.title %></a></h3>
               <p class="finding-link"><%= item.url %></p>
+              <p class="finding-meta"><span class="chip-soft"><%= info.site.label %></span></p>
               <% if (item.details.snippet) { %>
                 <p class="finding-text"><%= item.details.snippet %></p>
+              <% } %>
+              <% if (info.signals.length > 0) { %>
+                <div class="signals">
+                  <p class="signals-title">Dit lijkt in de titel of het fragment te staan (gemaskeerd):</p>
+                  <ul class="chips" aria-label="Mogelijke persoonsgegevens in dit resultaat">
+                    <% for (const signal of info.signals) { %>
+                      <li><%= signal.label %>: <strong><%= signal.display %></strong><% if (signal.yours) { %> · komt overeen met het e-mailadres van je account<% } %></li>
+                    <% } %>
+                  </ul>
+                  <p class="hint">Het is een gok op basis van het uiterlijk. Of het van jou is, bepaal jij.</p>
+                </div>
               <% } %>
               <%- include('partials/evidence', { finding: item }) %>
               <form method="post" action="/resultaten/<%= item.id %>" class="choices">
@@ -160,7 +204,7 @@
         <% const mineCount = web.filter((item) => item.status === 'mine').length; %>
         <% const newCount = web.filter((item) => item.status === 'new').length; %>
         <p class="advice">
-          <%= mineCount === 1 ? '1 resultaat' : mineCount + ' resultaten' %> gemarkeerd als "Dit ben ik".
+          <%= mineCount === 1 ? '1 resultaat' : mineCount + ' resultaten' %> door jou bevestigd als "Dit ben ik".
           <% if (newCount > 0) { %>Nog te beoordelen: <%= newCount %>.<% } %>
         </p>
       <% } %>

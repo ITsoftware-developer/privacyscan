@@ -8,7 +8,7 @@ import {
 const entry = (register, id) => register.find((item) => item.id === id);
 const stateOf = (register, id) => entry(register, id).state;
 
-test('evidenceSource kent de bronnen van datalekken en de demo-zoekdienst', () => {
+test('evidenceSource kent de bronnen van datalekken en de zoekdiensten', () => {
   assert.equal(evidenceSource('hibp'), SOURCES.hibp);
   assert.equal(evidenceSource('xon'), SOURCES.xon);
 
@@ -16,11 +16,16 @@ test('evidenceSource kent de bronnen van datalekken en de demo-zoekdienst', () =
   assert.equal(demo.id, 'demo');
   assert.match(demo.name, /nepdata/);
   assert.equal(demo.url, null); // de demo is geen echte bron om naar te linken
+
+  const brave = evidenceSource('brave');
+  assert.equal(brave.id, 'brave');
+  assert.equal(brave.name, 'Brave Search');
+  assert.equal(brave.url, 'https://search.brave.com'); // een echte bron: je kunt hem nalopen
 });
 
 test('evidenceSource verzint geen bron: een id die we niet kennen, blijft een tekst zonder link', () => {
-  const onbekend = evidenceSource('brave');
-  assert.deepEqual(onbekend, { id: 'onbekend', name: 'brave', url: null, credit: null });
+  const onbekend = evidenceSource('google');
+  assert.deepEqual(onbekend, { id: 'onbekend', name: 'google', url: null, credit: null });
 
   // Geen id (een bevinding uit de tijd voor deze functie), of rommel.
   for (const leeg of [null, undefined, '', 7, {}]) {
@@ -39,7 +44,10 @@ test('zonder instellingen staat alleen wat echt werkt op "actief"', () => {
   assert.equal(stateOf(register, 'hibp'), 'testmodus'); // zonder sleutel: alleen de testadressen
   assert.equal(stateOf(register, 'xon'), 'uit');
   assert.equal(stateOf(register, 'pwned-passwords'), 'actief'); // werkt bij het maken van een account
-  assert.equal(stateOf(register, 'search'), 'gepland');
+  // Zonder zoekdienst zoeken we niet op het web: niet "actief", en ook niet "demo"
+  assert.equal(stateOf(register, 'search'), 'niet-ingesteld');
+  assert.match(entry(register, 'search').note, /niet op het web gezocht en er wordt niets verzonnen/);
+  assert.match(entry(register, 'search').note, /BRAVE_API_KEY/);
   for (const id of ['databrokers', 'social', 'documenten', 'darkweb']) {
     assert.equal(stateOf(register, id), 'gepland', id);
   }
@@ -57,11 +65,37 @@ test('met een HIBP-sleutel is HIBP actief, met de gratis dienst is XposedOrNot a
   assert.match(entry(gratis, 'xon').note, /25 controles per uur/);
 });
 
-test('de zoekdienst is "gepland" zonder dienst, "demo" bij nepdata en pas "actief" bij een echte', () => {
-  assert.equal(stateOf(describeRegister({ search: null }), 'search'), 'gepland');
+test('de zoekdienst is "niet ingesteld" zonder dienst, "demo" bij nepdata en pas "actief" bij een echte', () => {
+  assert.equal(stateOf(describeRegister({ search: null }), 'search'), 'niet-ingesteld');
   assert.equal(stateOf(describeRegister({ search: { isDemo: true } }), 'search'), 'demo');
   assert.equal(stateOf(describeRegister({ search: { isDemo: false, name: 'echt' } }), 'search'), 'actief');
   assert.match(entry(describeRegister({ search: { isDemo: true } }), 'search').note, /verzonnen/);
+});
+
+test('bij een echte zoekdienst staat er waar de zoekopdracht heen gaat en hoe lang resultaten blijven', () => {
+  const brave = { isDemo: false, name: 'brave', label: 'Brave Search', retainsResults: false };
+  const note = entry(describeRegister({ search: brave }), 'search').note;
+  assert.match(note, /Je naam en woonplaats gaan als zoekopdracht naar Brave Search/);
+  assert.match(note, /hooguit 30 minuten/);
+  assert.match(note, /alleen jouw keuzes blijven/);
+
+  // Met opslagrechten mag het wel, en dat staat er dan ook.
+  const metRechten = entry(describeRegister({ search: { ...brave, retainsResults: true } }), 'search').note;
+  assert.match(metRechten, /bewaren we in je account/);
+  assert.doesNotMatch(metRechten, /30 minuten/);
+});
+
+test('met een echte zoekdienst markeren we sociale media en documenten, maar zoeken we er nog niet apart', () => {
+  const echt = describeRegister({ search: { isDemo: false, name: 'brave', label: 'Brave Search' } });
+  for (const id of ['social', 'documenten']) {
+    assert.equal(stateOf(echt, id), 'gepland', id);
+    assert.match(entry(echt, id).note, /markeren we in de resultaten/);
+    assert.match(entry(echt, id).note, /nog niet gebouwd/);
+  }
+  // Bij de demo of zonder zoekdienst is er niets om te markeren.
+  for (const search of [null, { isDemo: true }]) {
+    assert.doesNotMatch(entry(describeRegister({ search }), 'social').note, /markeren/);
+  }
 });
 
 test('wat nog niet bestaat, wordt nooit "actief", wat er ook is ingesteld', () => {

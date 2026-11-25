@@ -49,7 +49,12 @@ function problemsFor(source) {
     unavailable: [502, `${source.name} is nu niet bereikbaar. Probeer het later nog eens.`],
     unexpected: [502, `${source.name} gaf een onverwacht antwoord. Probeer het later nog eens.`],
     name_too_short: [400, 'Je naam bevat te weinig letters om op te zoeken.'],
+    no_search: [503, 'Er is geen zoekdienst ingesteld, dus we kunnen niet op het web zoeken. Zet BRAVE_API_KEY in je .env (zie de README) en start de site opnieuw.'],
     search_failed: [502, 'De zoekdienst gaf een fout. Probeer het later nog eens.'],
+    search_bad_key: [502, 'De zoekdienst accepteerde de sleutel niet. Controleer BRAVE_API_KEY in je .env.'],
+    search_rate_limited: [429, 'De zoekdienst staat nu geen aanvragen meer toe: de limiet of het tegoed is op. Probeer het later nog eens.'],
+    search_unavailable: [502, 'De zoekdienst is nu niet bereikbaar. Probeer het later nog eens.'],
+    search_unexpected: [502, 'De zoekdienst gaf een onverwacht antwoord. Probeer het later nog eens.'],
     search_disabled: [403, 'Zoeken op naam staat uit op een openbare site. Een bevestigd e-mailadres bewijst niet dat de naam van jou is.'],
   };
 }
@@ -133,7 +138,6 @@ export function createScanRoutes({
       breachScan: lastScan(db, req.user.id, 'breach'),
       webScan: lastScan(db, req.user.id, 'web'),
       run: lastRun(db, req.user.id),
-      searchIsDemo: Boolean(search.isDemo),
       checkSource: sourceOf(req.user),
       sourceById,
       error,
@@ -170,8 +174,8 @@ export function createScanRoutes({
       const scan = lastScan(db, userId, 'web');
       if (!scan) return null;
       if (scan.found_count === 0) return 'De zoekdienst vond niets bij deze zoekopdracht.';
-      const found = scan.found_count === 1 ? '1 resultaat' : `${scan.found_count} resultaten`;
-      return `Gezocht: ${found} gevonden${scan.new_count > 0 ? `, waarvan ${scan.new_count} nieuw` : ''}. Beoordeel ze hieronder.`;
+      const found = scan.found_count === 1 ? '1 mogelijke vermelding' : `${scan.found_count} mogelijke vermeldingen`;
+      return `Gezocht: ${found} gevonden${scan.new_count > 0 ? `, waarvan ${scan.new_count} nieuw` : ''}. Beoordeel ze hieronder: het zegt niet dat ze over jou gaan.`;
     }
     return null;
   }
@@ -199,7 +203,6 @@ export function createScanRoutes({
       // De beheerder die nog niet bevestigd heeft, krijgt de uitnodiging om dat te doen
       // en niet te horen dat zoeken uit staat.
       ownerPending: production && !req.user.email_confirmed_at && hasOwnerAddress(req.user, ownerEmail),
-      searchIsDemo: Boolean(search.isDemo),
       counts: countFindings(db, req.user.id),
       wide: true,
     });

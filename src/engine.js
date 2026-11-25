@@ -10,8 +10,8 @@ export const STEP_DEFS = [
   { id: 'datalekken', title: 'Datalekdatabases onderzoeken' },
   { id: 'databrokers', title: 'Databrokers controleren' },
   { id: 'web', title: 'Openbare internetbronnen onderzoeken' },
-  { id: 'blootstelling', title: 'Blootstelling van persoonsgegevens controleren' },
-  { id: 'verificatie', title: 'Bevindingen verifiëren' },
+  { id: 'blootstelling', title: 'Mogelijke blootstelling beoordelen' },
+  { id: 'verificatie', title: 'Bewijs controleren' },
 ];
 
 export const STEP_TITLES = Object.fromEntries(STEP_DEFS.map((step) => [step.id, step.title]));
@@ -38,8 +38,9 @@ export const STATUSES = {
 export function describeStep(step) {
   const known = Object.hasOwn(STATUSES, step?.status);
   const { tone, label } = known ? STATUSES[step.status] : { tone: 'idle', label: 'Onbekend' };
+  // De naam komt van het id, zodat een rapport van een eerdere versie de huidige namen toont.
   return {
-    title: String(step?.title ?? STEP_TITLES[step?.id] ?? ''),
+    title: String(Object.hasOwn(STEP_TITLES, step?.id) ? STEP_TITLES[step.id] : (step?.title ?? '')),
     tone,
     label: step?.status === 'done' && step.demo ? `${label} (demo)` : label,
     note: step?.note ? String(step.note) : '',
@@ -58,25 +59,25 @@ const GROUPS = [
     id: 'inloggegevens',
     label: 'Inloggegevens',
     classes: ['passwords', 'password hints', 'usernames', 'auth tokens', 'security questions and answers'],
-    advice: 'Gebruik het wachtwoord van die diensten nergens meer, ook niet op andere sites. Kies overal een eigen wachtwoord en zet tweestapsverificatie aan.',
+    advice: 'Had je bij deze diensten een account, gebruik dat wachtwoord dan nergens meer, ook niet op andere sites. Kies overal een eigen wachtwoord en zet tweestapsverificatie aan.',
   },
   {
     id: 'telefoon',
     label: 'Telefoonnummers',
     classes: ['phone numbers'],
-    advice: 'Wees alert op nep-sms\'jes en telefoontjes van "je bank" of "een bezorger".',
+    advice: 'Stond je nummer bij een van deze diensten, wees dan alert op nep-sms\'jes en telefoontjes van "je bank" of "een bezorger".',
   },
   {
     id: 'adres',
     label: 'Adressen en locaties',
     classes: ['physical addresses', 'geographic locations'],
-    advice: 'Je adres is in handen van anderen. Let op phishing waarin je echte adres staat om geloofwaardig te lijken.',
+    advice: 'Stond je adres bij een van deze diensten, dan kan het gebruikt worden om een nepbericht geloofwaardig te maken. Wees alert op post en mail waarin je adres staat.',
   },
   {
     id: 'identiteit',
     label: 'Identiteit',
     classes: ['names', 'dates of birth', 'genders', 'ages'],
-    advice: 'Met zulke gegevens lijkt een nepmail echt. Wees voorzichtig met onverwachte verzoeken om gegevens of geld.',
+    advice: 'Zulke gegevens kunnen een nepmail geloofwaardiger maken. Wees voorzichtig met onverwachte verzoeken om gegevens of geld.',
   },
   {
     id: 'betaling',
@@ -112,19 +113,23 @@ export function exposureFrom(breaches) {
   return result;
 }
 
-// Eén zin voor in het rapport, bijvoorbeeld "Inloggegevens in 2 lekken, telefoonnummers in 1 lek."
+// Eén zin voor in het rapport, bijvoorbeeld "De lekken bevatten soorten gegevens als:
+// inloggegevens (in 2 lekken), telefoonnummers (in 1 lek). Of jouw eigen gegevens ..."
+// Dit zegt wat een lek bevatte, niet dat van jou precies dat gelekt is: een bron meldt per lek
+// welke soorten gegevens erin zaten, niet wat er van jou in stond.
 export function exposureNote(exposure, breachCount) {
   if (breachCount === 0) return 'Er is geen datalek gevonden, dus er is niets om te beoordelen.';
   if (exposure.length === 0) {
     return 'In de gevonden lekken herkennen we geen inloggegevens, telefoonnummers, adressen of betaalgegevens.';
   }
-  const text = exposure.map((group) => `${group.label.toLowerCase()} in ${lekken(group.breaches.length)}`).join(', ');
-  return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
+  const text = exposure.map((group) => `${group.label.toLowerCase()} (in ${lekken(group.breaches.length)})`).join(', ');
+  return `De lekken bevatten soorten gegevens als: ${text}. Of jouw eigen gegevens daarbij zaten, melden de bronnen niet.`;
 }
 
-// --- Verifiëren: heeft elke bevinding een bron, een datum en een zekerheid? ----------------------
-// Dit controleert de bewijsvoering van onze eigen bevindingen. De inhoud van de bron zelf
-// controleren we niet: dat kan alleen jij, door de link te openen.
+// --- Bewijs controleren: heeft elke bevinding een bron, een datum en een beoordeling? -----------
+// Dit controleert de bewijsvoering van onze eigen bevindingen, en niets meer dan dat. Of de
+// inhoud van een bron klopt, controleren we niet: dat kan alleen jij, door de link te openen. Daarom
+// heet de stap "Bewijs controleren" en niet "verifiëren".
 export function verifyFindings(findings) {
   const counts = { checked: findings.length, withoutSource: 0, withoutDate: 0, unrated: 0, withoutLink: 0 };
   for (const finding of findings) {
@@ -141,12 +146,13 @@ export function verifyNote({ checked, withoutSource, withoutDate, unrated, witho
   const problems = [];
   if (withoutSource) problems.push(`${withoutSource} zonder bron`);
   if (withoutDate) problems.push(`${withoutDate} zonder datum`);
-  if (unrated) problems.push(`${unrated} zonder beoordeling van de zekerheid`);
+  if (unrated) problems.push(`${unrated} zonder beoordeling`);
   if (withoutLink) problems.push(`${withoutLink} zonder directe link`);
-  const first = `${bevindingen(checked)} gecontroleerd op bron, datum en zekerheid`;
+  const first = `${bevindingen(checked)} gecontroleerd op bron, datum en beoordeling`;
+  const limit = 'Dit controleert ons eigen bewijs, niet of de inhoud van de bron klopt: dat zie je pas als je de link opent.';
   return problems.length > 0
-    ? `${first}. Let op: ${problems.join(', ')}.`
-    : `${first}: elk heeft een bron, een datum en een zekerheid.`;
+    ? `${first}. Let op: ${problems.join(', ')}. ${limit}`
+    : `${first}: elk heeft een bron, een datum en een beoordeling. ${limit}`;
 }
 
 // --- De startpagina ------------------------------------------------------------------------
@@ -165,8 +171,8 @@ export function publicPlan({ testMode = false } = {}) {
     },
     { id: 'databrokers', status: 'planned', note: 'Komt in fase 3, alleen via toegestane bronnen.' },
     { id: 'web', status: 'account', note: 'Alleen op je eigen naam, in je account.' },
-    { id: 'blootstelling', status: 'after', note: 'Welke soorten gegevens zijn er blootgesteld?' },
-    { id: 'verificatie', status: 'after', note: 'Heeft elke bevinding een bron, een datum en een zekerheid?' },
+    { id: 'blootstelling', status: 'after', note: 'Welke soorten gegevens bevatten de lekken?' },
+    { id: 'verificatie', status: 'after', note: 'Heeft elke bevinding een bron, een datum en een beoordeling?' },
   ].map(withTitle);
 }
 

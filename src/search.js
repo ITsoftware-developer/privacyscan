@@ -2,6 +2,8 @@
 // naam van het ingelogde account (en de woonplaats uit het profiel). Er is nergens
 // een vak waarin je iets anders kunt intypen, en dat is bewust zo: een open
 // zoekbalk werkt net zo goed voor een ex of een stalker als voor jezelf.
+import { createThrottle } from './hibp.js';
+import { ScanError } from './scan-error.js';
 import { plainText } from './text.js';
 
 // Maakt een naam of woonplaats geschikt voor een zoekopdracht: alleen letters,
@@ -77,19 +79,28 @@ export function cleanResults(results, max = 20) {
 }
 
 // --- Zoekdiensten ----------------------------------------------------------------
-// Een zoekdienst heeft één functie: search({ query, name, city }) geeft een lijst
-// met { title, url, snippet }. Een echte dienst (zoals Brave Search of Google) komt
-// hier later bij. Lees eerst hun voorwaarden: sommige verbieden het bewaren van
-// resultaten, en dat doen we wel.
+// Een zoekdienst heeft één functie: search({ query, name, city }) geeft een lijst met
+// { title, url, snippet }, en gooit een ScanError als het niet lukt. Daarnaast heeft hij:
+//
+//   id              het korte nummer van de dienst ('brave', 'demo'), ook in de database
+//   label           de naam voor in de pagina's
+//   url             de website van de dienst, of null
+//   isDemo          verzint de dienst alles? (alleen de demo)
+//   retainsResults  mogen we de resultaten bewaren? Bij Brave niet, tenzij je een abonnement met
+//                   opslagrechten hebt (zie hieronder).
 
-// De demo-dienst verzint resultaten, zodat je de hele werking kunt zien zonder
-// sleutel, kosten of echte gegevens. Er wordt niets naar buiten gestuurd. De
-// adressen horen bij example.org, example.net en example.com: domeinen die
-// bestaan om in voorbeelden te gebruiken.
+// De demo verzint resultaten, zodat de tests en ontwikkelaars de hele werking kunnen zien zonder
+// sleutel, kosten of echte gegevens. Hij staat nergens standaard aan: alleen met
+// SEARCH_PROVIDER=demo. Er wordt niets naar buiten gestuurd. De adressen horen bij example.org,
+// example.net en example.com: domeinen die bestaan om in voorbeelden te gebruiken.
 export function createDemoSearch() {
   return {
+    id: 'demo',
     name: 'demo',
+    label: 'Demo-zoekdienst (nepdata)',
+    url: null,
     isDemo: true,
+    retainsResults: true,
     async search({ name, city }) {
       const where = city ? ` in ${city}` : '';
       return [
@@ -123,8 +134,142 @@ export function createDemoSearch() {
   };
 }
 
-// Kiest de zoekdienst uit de instelling SEARCH_PROVIDER.
-export function createSearch(provider = 'demo') {
-  if (provider === 'demo') return createDemoSearch();
-  throw new Error(`Onbekende zoekdienst "${provider}". Op dit moment bestaat alleen "demo".`);
+// --- Brave Search ------------------------------------------------------------------
+// De echte zoekdienst: de Brave Search API (api.search.brave.com). Voor een sleutel heb je een
+// account met een betaalmiddel nodig; je krijgt elke maand een tegoed (zie de README).
+//
+// Let op de voorwaarden van Brave:
+//   - Resultaten bewaren of een database ervan maken mag niet, behalve tijdelijke opslag die de
+//     toepassing nodig heeft om te werken. Daarom bewaart deze app ze maximaal een half uur en
+//     bewaart hij van jouw keuzes alleen een hash van het adres (zie findings.js). Heb je een
+//     abonnement met opslagrechten, zet dan BRAVE_STORAGE_RIGHTS=on.
+//   - Je naam en woonplaats gaan als zoekopdracht naar Brave. De privacyverklaring zegt dat.
+//   - De sleutel blijft in .env: hij komt nooit in een pagina, een logboek of een foutmelding.
+const BRAVE_URL = 'https://api.search.brave.com/res/v1/web/search';
+const BRAVE_USER_AGENT = 'Privacyscan (zoekt de eigen naam van de gebruiker op het web)';
+
+// Haalt uit het antwoord van Brave de lijst { title, url, snippet }. Brave laat het onderdeel
+// "web" weg als er niets gevonden is; dat is geen fout. Is het antwoord iets anders dan een
+// zoekantwoord, dan is het wel een fout: "niets gevonden" zeggen terwijl we het antwoord niet
+// begrijpen, zou een leugen zijn.
+function braveResults(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new ScanError('unexpected');
+  if (data.web === undefined) {
+    if (data.type === 'search' || (data.query && typeof data.query === 'object')) return [];
+    throw new ScanError('unexpected');
+  }
+  const { web } = data;
+  if (!web || typeof web !== 'object' || Array.isArray(web)) throw new ScanError('unexpected');
+  if (web.results === undefined) return [];
+  if (!Array.isArray(web.results)) throw new ScanError('unexpected');
+  return web.results.map((item) => ({ title: item?.title, url: item?.url, snippet: item?.description }));
+}
+
+export function createBraveSearch({
+  apiKey,
+  fetchImpl = fetch,        // de tests vervangen deze, zodat ze niets echt versturen
+  baseUrl = BRAVE_URL,
+  country = 'NL',           // wat Brave als "land" gebruikt om de volgorde te bepalen
+  retainsResults = false,   // zie hierboven: alleen true met een abonnement met opslagrechten
+  minIntervalMs = 1100,     // Brave begrenst het aantal aanvragen per seconde
+  maxWaitMs = 20000,
+  timeoutMs = 10000,
+  log = console.error,
+} = {}) {
+  const key = String(apiKey ?? '').trim();
+  if (!key) throw new Error('Voor Brave Search is een sleutel nodig. Zet BRAVE_API_KEY in je .env (zie de README).');
+  // Een sleutel is één stuk tekst van letters, cijfers en een paar tekens, zonder spaties,
+  // aanhalingstekens of regeleinden. Zo kan een slordig geplakte waarde niet in een header terechtkomen.
+  if (!/^[A-Za-z0-9._~+/=-]{8,200}$/.test(key)) {
+    throw new Error('BRAVE_API_KEY ziet er niet goed uit: een sleutel heeft geen spaties of aanhalingstekens. Plak hem opnieuw in je .env.');
+  }
+  const throttle = createThrottle(minIntervalMs, maxWaitMs);
+
+  return {
+    id: 'brave',
+    name: 'brave',
+    label: 'Brave Search',
+    url: 'https://search.brave.com',
+    isDemo: false,
+    retainsResults,
+    // Er komt nooit iets van de zoekopdracht, de naam of de sleutel in de logregels: alleen wat
+    // de beheerder moet weten om de fout te vinden.
+    async search({ query }) {
+      await throttle();
+
+      const url = new URL(baseUrl);
+      url.search = new URLSearchParams({
+        q: query,
+        count: '20',
+        country,
+        safesearch: 'moderate',
+        text_decorations: 'false',
+      }).toString();
+
+      let response;
+      try {
+        response = await fetchImpl(url, {
+          headers: { 'X-Subscription-Token': key, Accept: 'application/json', 'User-Agent': BRAVE_USER_AGENT },
+          signal: AbortSignal.timeout(timeoutMs),
+          redirect: 'error',
+        });
+      } catch {
+        throw new ScanError('unavailable');
+      }
+
+      if (response.status === 401 || response.status === 403) {
+        log('Brave Search weigerde de sleutel. Controleer BRAVE_API_KEY in je .env.');
+        throw new ScanError('bad_key');
+      }
+      if (response.status === 402 || response.status === 429) {
+        log('Brave Search staat nu geen aanvragen meer toe: de limiet of het tegoed is op.');
+        throw new ScanError('rate_limited');
+      }
+      if (response.status >= 500) throw new ScanError('unavailable');
+      if (!response.ok) {
+        log(`Brave Search gaf onverwacht antwoord (HTTP ${response.status}).`);
+        throw new ScanError('unexpected');
+      }
+
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        log('Brave Search gaf geen leesbaar antwoord.');
+        throw new ScanError('unexpected');
+      }
+      return braveResults(data);
+    },
+  };
+}
+
+// Kiest de zoekdienst uit de instellingen. Geeft null als er geen is: dan zegt de app eerlijk
+// dat er niet gezocht kan worden, en verzint hij niets.
+//   SEARCH_PROVIDER leeg  Brave als er een sleutel is, anders geen
+//   brave                 Brave (de sleutel is verplicht)
+//   demo                  de nepdata van de demo, alleen om uit te proberen
+//   none                  geen zoekdienst
+export function createSearch(provider = '', { braveKey = '', storageRights = false, fetchImpl } = {}) {
+  const wanted = String(provider ?? '').trim().toLowerCase();
+  if (wanted === 'demo') return createDemoSearch();
+  if (wanted === 'none') return null;
+  if (wanted === 'brave' || (wanted === '' && String(braveKey).trim() !== '')) {
+    return createBraveSearch({
+      apiKey: braveKey,
+      retainsResults: storageRights,
+      ...(fetchImpl ? { fetchImpl } : {}),
+    });
+  }
+  if (wanted === '') return null;
+  throw new Error(`Onbekende zoekdienst "${provider}". Kies "brave", "demo" of "none", of laat SEARCH_PROVIDER leeg.`);
+}
+
+// Leest BRAVE_STORAGE_RIGHTS uit .env. Alleen "on" als je bij Brave een abonnement hebt dat het
+// bewaren van resultaten toestaat. Leeg of "off": resultaten blijven maximaal een half uur staan.
+// Een typfout stopt de server liever dan dat de app stilletjes resultaten gaat bewaren.
+export function parseStorageRights(value) {
+  const text = String(value ?? '').trim().toLowerCase();
+  if (text === '' || ['off', 'false', '0', 'uit', 'no', 'nee'].includes(text)) return false;
+  if (['on', 'true', '1', 'aan', 'yes', 'ja'].includes(text)) return true;
+  throw new Error('BRAVE_STORAGE_RIGHTS moet "on" of "off" zijn (of leeg). Controleer je .env.');
 }

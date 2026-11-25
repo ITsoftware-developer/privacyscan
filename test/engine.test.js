@@ -22,8 +22,8 @@ test('de vijf stappen heten zoals in het plan, in die volgorde', () => {
     'Datalekdatabases onderzoeken',
     'Databrokers controleren',
     'Openbare internetbronnen onderzoeken',
-    'Blootstelling van persoonsgegevens controleren',
-    'Bevindingen verifiëren',
+    'Mogelijke blootstelling beoordelen',
+    'Bewijs controleren',
   ]);
   assert.deepEqual(STEP_DEFS.map((step) => step.id), ['datalekken', 'databrokers', 'web', 'blootstelling', 'verificatie']);
   assert.equal(STEP_TITLES.databrokers, 'Databrokers controleren');
@@ -50,6 +50,19 @@ test('een stap uit de demo heet "Voltooid (demo)", zodat nepdata nooit voor echt
   assert.equal(describeStep({ id: 'web', status: 'done', demo: false }).label, 'Voltooid');
   // Alleen "voltooid" krijgt dat achtervoegsel.
   assert.equal(describeStep({ id: 'web', status: 'skipped', demo: true }).label, 'Overgeslagen');
+});
+
+test('een rapport van een eerdere versie toont de namen van nu, en een stap die we niet kennen houdt zijn eigen naam', () => {
+  // Zo'n rapport bewaarde zijn eigen titels, van toen de stappen nog anders heetten.
+  assert.equal(describeStep({ id: 'blootstelling', title: 'Blootstelling beoordelen', status: 'done' }).title, STEP_TITLES.blootstelling);
+  assert.equal(describeStep({ id: 'verificatie', title: 'Resultaten verifiëren', status: 'done' }).title, STEP_TITLES.verificatie);
+  assert.match(STEP_TITLES.blootstelling, /Mogelijke blootstelling/);
+  assert.match(STEP_TITLES.verificatie, /Bewijs controleren/);
+  assert.equal(describeStep({ id: 'nieuwe-stap', title: 'Iets nieuws', status: 'done' }).title, 'Iets nieuws');
+  // Een id die toevallig een eigenschap van elk object is, geeft geen functie als titel.
+  for (const id of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+    assert.equal(describeStep({ id, title: 'Eigen naam', status: 'done' }).title, 'Eigen naam', id);
+  }
 });
 
 test('een status die we niet kennen, tonen we als "Onbekend" en nooit als voltooid', () => {
@@ -80,7 +93,7 @@ test('alleen een stap die echt gelopen is, heet "Voltooid"', () => {
 });
 
 test('de titel komt uit het id en de toelichting wordt altijd tekst', () => {
-  assert.equal(describeStep({ id: 'blootstelling', status: 'done' }).title, 'Blootstelling van persoonsgegevens controleren');
+  assert.equal(describeStep({ id: 'blootstelling', status: 'done' }).title, 'Mogelijke blootstelling beoordelen');
   assert.equal(describeStep({ title: 'Eigen titel', status: 'done' }).title, 'Eigen titel');
   assert.equal(describeStep({ id: 'web', status: 'done', note: 12 }).note, '12');
 });
@@ -134,7 +147,10 @@ test('exposureNote is één zin, en zegt eerlijk dat er niets te beoordelen valt
   const exposure = exposureFrom([
     breach('Adobe', ['Passwords']), breach('Forum', ['Passwords', 'Phone numbers']),
   ]);
-  assert.equal(exposureNote(exposure, 2), 'Inloggegevens in 2 lekken, telefoonnummers in 1 lek.');
+  assert.equal(
+    exposureNote(exposure, 2),
+    'De lekken bevatten soorten gegevens als: inloggegevens (in 2 lekken), telefoonnummers (in 1 lek). Of jouw eigen gegevens daarbij zaten, melden de bronnen niet.',
+  );
 });
 
 // --- Het bewijs controleren ---------------------------------------------------------------
@@ -163,20 +179,23 @@ test('verifyNote vertelt wat er gecontroleerd is, en noemt elk gebrek', () => {
   assert.equal(verifyNote(verifyFindings([])), 'Er zijn geen bevindingen om te controleren.');
   assert.equal(
     verifyNote(verifyFindings([COMPLETE])),
-    '1 bevinding gecontroleerd op bron, datum en zekerheid: elk heeft een bron, een datum en een zekerheid.',
+    '1 bevinding gecontroleerd op bron, datum en beoordeling: elk heeft een bron, een datum en een beoordeling.'
+      + ' Dit controleert ons eigen bewijs, niet of de inhoud van de bron klopt: dat zie je pas als je de link opent.',
   );
   assert.equal(
     verifyNote(verifyFindings([COMPLETE, COMPLETE, COMPLETE])),
-    '3 bevindingen gecontroleerd op bron, datum en zekerheid: elk heeft een bron, een datum en een zekerheid.',
+    '3 bevindingen gecontroleerd op bron, datum en beoordeling: elk heeft een bron, een datum en een beoordeling.'
+      + ' Dit controleert ons eigen bewijs, niet of de inhoud van de bron klopt: dat zie je pas als je de link opent.',
   );
 
   const note = verifyNote(verifyFindings([
     { ...COMPLETE, source_id: null }, { ...COMPLETE, confidence: null }, { ...COMPLETE, url: null }, {},
   ]));
-  assert.match(note, /^4 bevindingen gecontroleerd op bron, datum en zekerheid\. Let op: /);
+  assert.match(note, /^4 bevindingen gecontroleerd op bron, datum en beoordeling\. Let op: /);
+  assert.match(note, /niet of de inhoud van de bron klopt/); // ook met een gebrek zegt hij wat hij niet doet
   assert.match(note, /2 zonder bron/);
   assert.match(note, /1 zonder datum/);
-  assert.match(note, /2 zonder beoordeling van de zekerheid/);
+  assert.match(note, /2 zonder beoordeling/);
   assert.match(note, /2 zonder directe link/);
   assert.doesNotMatch(note, /elk heeft een bron/); // met een gebrek mag dat er niet staan
 });
@@ -212,11 +231,12 @@ test('na een controle is alleen gedaan wat echt gedaan is', () => {
   assert.equal(describeStep(steps[1]).label, 'Nog niet gebouwd');
   assert.equal(describeStep(steps[2]).label, 'Overgeslagen');
   assert.match(noteOf(steps, 'web'), /alleen in je eigen account/);
-  assert.match(noteOf(steps, 'blootstelling'), /Inloggegevens in 1 lek, telefoonnummers in 1 lek/);
-  assert.match(noteOf(steps, 'verificatie'), /elk heeft een bron, een datum en een zekerheid/);
+  assert.match(noteOf(steps, 'blootstelling'), /inloggegevens \(in 1 lek\), telefoonnummers \(in 1 lek\)/);
+  assert.match(noteOf(steps, 'verificatie'), /elk heeft een bron, een datum en een beoordeling/);
+  assert.match(noteOf(steps, 'verificatie'), /niet of de inhoud van de bron klopt/);
 });
 
-test('bij één lek staat er "1 datalek", en geen lek geeft goed nieuws zonder iets te "verifiëren"', () => {
+test('bij één lek staat er "1 datalek", en geen lek geeft goed nieuws zonder bewijs te controleren', () => {
   const een = publicRun({ breaches: withEvidence([breach('Adobe', ['Passwords'])], { source: XON }), source: XON });
   assert.equal(noteOf(een, 'datalekken'), '1 datalek gevonden bij XposedOrNot.');
 
@@ -233,7 +253,7 @@ test('stap 5 kijkt naar wat er echt is: een lek zonder bewijs of zonder link val
   const kaal = publicRun({ breaches: [breach('Adobe', ['Passwords'])], source: XON });
   assert.match(noteOf(kaal, 'verificatie'), /zonder bron/);
   assert.match(noteOf(kaal, 'verificatie'), /zonder datum/);
-  assert.match(noteOf(kaal, 'verificatie'), /zonder beoordeling van de zekerheid/);
+  assert.match(noteOf(kaal, 'verificatie'), /zonder beoordeling/);
   assert.doesNotMatch(noteOf(kaal, 'verificatie'), /elk heeft een bron/);
 
   // Met bewijs maar zonder link (zoals LinkedIn bij XposedOrNot): dat noemt hij ook.

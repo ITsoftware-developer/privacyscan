@@ -56,7 +56,14 @@
       (titel, adres en een korte tekst), jouw keuze per webresultaat ("Dit ben
       ik", "Dit ben ik niet" of "Weet ik niet") en wanneer je voor het laatst
       gezocht hebt. Bij elke bevinding bewaren we uit welke bron hij komt, wanneer
-      we hem onderzochten en hoe zeker het is dat hij over jou gaat. Doe je een
+      we hem onderzochten en hoe zeker het is dat hij over jou gaat.
+      <% if (searchPolicy.configured && !searchPolicy.isDemo && !searchPolicy.retains) { %>
+        <strong>De webresultaten zelf bewaren we maar <%= searchPolicy.keepMinutes %> minuten</strong>,
+        omdat <%= searchPolicy.name %> niet toestaat dat we ze bewaren. Van jouw keuze per webresultaat
+        blijft alleen de keuze zelf bewaard, samen met een vingerafdruk (hash) van het adres: een
+        code, niet het adres, de titel of de tekst zelf.
+      <% } %>
+      Doe je een
       Deep Scan, dan bewaren we ook het rapport van de laatste: welke stappen liepen,
       wat er niet kon en welke soorten gegevens zijn gelekt. Dit is nodig om je de
       dienst te geven waar je om vraagt (artikel 6 lid 1 onder b AVG).
@@ -131,7 +138,12 @@
       <%= breachSources.map((item) => item.name).join(' of ') %>, op dezelfde manier. Wij bewaren het niet;
       voor wat zij ermee doen gelden hun eigen voorwaarden.
     </li>
-    <% if (searchPolicy.allowed && searchPolicy.isDemo) { %>
+    <% if (!searchPolicy.configured) { %>
+      <li>
+        Er is geen zoekdienst ingesteld. Je naam gaat daarom niet naar een zoekdienst, en er wordt
+        niet op het web gezocht.
+      </li>
+    <% } else if (searchPolicy.allowed && searchPolicy.isDemo) { %>
       <li>
         Het zoeken op het web is op dit moment een <strong>demo met verzonnen
         resultaten</strong>. Daarbij gaat er niets naar buiten.
@@ -139,7 +151,7 @@
     <% } else if (searchPolicy.allowed) { %>
       <li>
         Als je op het web zoekt, sturen we <strong>je naam</strong> (en je
-        woonplaats, als je die hebt ingevuld) naar de zoekdienst
+        woonplaats, als je die hebt ingevuld) als zoekopdracht naar de zoekdienst
         <strong><%= searchPolicy.name %></strong>. Die dienst kan de zoekopdracht
         volgens haar eigen voorwaarden bewaren.
       </li>
@@ -148,6 +160,11 @@
         Het zoeken op het web is op dit moment een <strong>demo met verzonnen
         resultaten</strong>. Daarbij gaat er niets naar buiten. Voor andere gebruikers
         dan de beheerder staat zoeken op naam uit.
+      </li>
+    <% } else if (searchPolicy.ownerOnly && !searchPolicy.configured) { %>
+      <li>
+        Er is geen zoekdienst ingesteld, en voor andere gebruikers dan de beheerder staat zoeken op
+        naam uit. Er gaat dus geen naam naar een zoekdienst.
       </li>
     <% } else if (searchPolicy.ownerOnly) { %>
       <li>
@@ -173,10 +190,16 @@
   <h2>Hoe lang we gegevens bewaren</h2>
   <ul>
     <li>
-      Je naam, e-mailadres, woonplaats, wachtwoord-hash, gevonden datalekken en
-      webresultaten (met de bron, de datum en de zekerheid erbij), je keuzes en het rapport
-      van je laatste Deep Scan: zolang je account bestaat. Verwijder je je
-      account via je dashboard, dan wissen we ze allemaal meteen.
+      Je naam, e-mailadres, woonplaats, wachtwoord-hash, gevonden datalekken
+      <% if (searchPolicy.configured && !searchPolicy.isDemo && !searchPolicy.retains) { %>
+        (met de bron, de datum en de zekerheid erbij), je keuzes bij webresultaten en het rapport
+        van je laatste Deep Scan: zolang je account bestaat. De webresultaten zelf: maximaal
+        <%= searchPolicy.keepMinutes %> minuten.
+      <% } else { %>
+        en webresultaten (met de bron, de datum en de zekerheid erbij), je keuzes en het rapport
+        van je laatste Deep Scan: zolang je account bestaat.
+      <% } %>
+      Verwijder je je account via je dashboard, dan wissen we alles meteen.
     </li>
     <li>Bevestigingslinks: <%= confirmMinutes %> minuten, of tot je ze gebruikt hebt.</li>
     <li>Sessies: maximaal 7 dagen, of korter als je uitlogt.</li>

@@ -384,6 +384,12 @@ code { font-size: 0.9em; background: rgb(0 0 0 / 5%); padding: 1px 5px; border-r
 .evidence dd { margin: 0; overflow-wrap: anywhere; }
 .evidence-note { color: var(--muted); }
 
+/* Wat er in een webresultaat op persoonsgegevens lijkt (gemaskeerd) */
+.signals { margin: 8px 0; }
+.signals-title { margin: 0 0 6px; font-size: 0.88rem; font-weight: 600; }
+.signals .chips li { background: #fff6e0; }
+.signals .hint { margin-top: 0; }
+
 /* Bronnen en roadmap */
 .plain-list { margin: 10px 0 0; padding-left: 20px; }
 .plain-list li { margin-bottom: 8px; }
