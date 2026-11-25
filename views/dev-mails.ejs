@@ -1,0 +1,36 @@
+<%- include('partials/head', { title: 'Testpostvak' }) %>
+
+<section class="card prose">
+  <h1>Testpostvak</h1>
+  <p class="lead">
+    Alleen voor op je eigen computer. Mails die de app verstuurt, komen hier terecht in
+    plaats van in een echte inbox. Ze verdwijnen als je de server herstart.
+  </p>
+
+  <% if (usesSmtp) { %>
+    <p class="alert alert-warning" role="note">
+      <code>SMTP_URL</code> staat aan: mails gaan naar die mailserver (bijvoorbeeld Mailpit)
+      en niet naar dit postvak.
+    </p>
+  <% } %>
+
+  <% if (mails.length === 0) { %>
+    <p>Nog geen mails.</p>
+  <% } %>
+
+  <% for (const mail of mails) { %>
+    <article class="mail">
+      <dl class="facts">
+        <dt>Aan</dt><dd><%= mail.to %></dd>
+        <dt>Onderwerp</dt><dd><%= mail.subject %></dd>
+        <dt>Verstuurd</dt><dd><%= new Date(mail.sentAt).toLocaleTimeString('nl-NL') %></dd>
+      </dl>
+      <pre class="mail-text"><% for (const line of mail.text.split('\n')) { %><% if (/^https?:\/\/\S+$/.test(line)) { %><a href="<%= line %>"><%= line %></a><% } else { %><%= line %><% } %>
+<% } %></pre>
+    </article>
+  <% } %>
+
+  <p><a href="/dashboard">Terug naar je dashboard</a></p>
+</section>
+
+<%- include('partials/foot') %>

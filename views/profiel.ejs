@@ -1,0 +1,31 @@
+<%- include('partials/head', { title: 'Zoekgegevens' }) %>
+
+<section class="card form-card">
+  <h1>Zoekgegevens</h1>
+  <p class="lead">
+    Hiermee zoeken we op jouw eigen gegevens. Er is bewust geen zoekvak voor andere mensen.
+  </p>
+
+  <% if (error) { %>
+    <p class="alert alert-error" role="alert"><%= error %></p>
+  <% } %>
+
+  <dl class="facts">
+    <dt>Naam</dt><dd><%= user.name %></dd>
+    <dt>E-mailadres</dt><dd><%= user.email %></dd>
+  </dl>
+  <p class="hint">Naam en e-mailadres komen uit je account. Je naam kun je in deze versie nog niet wijzigen.</p>
+
+  <form method="post" action="/profiel">
+    <label for="woonplaats">Woonplaats (optioneel)</label>
+    <input id="woonplaats" name="woonplaats" autocomplete="address-level2" maxlength="60" value="<%= value %>">
+    <p class="hint">
+      Helpt om mensen met dezelfde naam weg te filteren. Laat je dit leeg, dan zoeken we alleen op je naam.
+    </p>
+    <button type="submit" class="button button-primary">Opslaan</button>
+  </form>
+
+  <p class="switch"><a href="/dashboard">Terug naar je dashboard</a></p>
+</section>
+
+<%- include('partials/foot') %>

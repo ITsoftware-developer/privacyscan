@@ -1,0 +1,128 @@
+<%- include('partials/head', { title: 'Resultaten' }) %>
+
+<section class="welcome">
+  <h1>Resultaten</h1>
+  <p class="lead">Wat we over jou gevonden hebben. <a href="/dashboard">Terug naar je dashboard</a></p>
+</section>
+
+<% if (notice) { %>
+  <p class="alert alert-ok notice-top" role="status"><%= notice %></p>
+<% } %>
+<% if (error) { %>
+  <p class="alert alert-error notice-top" role="alert"><%= error %></p>
+<% } %>
+
+<div class="results">
+  <article class="card" id="datalekken">
+    <header class="card-head">
+      <h2>Datalekken</h2>
+      <% if (breachScan) { %>
+        <span class="badge <%= breaches.length > 0 ? 'badge-warn' : 'badge-ok' %>"><%= breaches.length %> gevonden</span>
+      <% } %>
+    </header>
+
+    <% if (!breachScan) { %>
+      <p class="card-text">Je hebt nog niet gezocht. Dat doe je op je <a href="/dashboard">dashboard</a>.</p>
+    <% } else { %>
+      <p class="hint notice-top">Laatst gecontroleerd op <%= formatDateTime(breachScan.ran_at) %>.</p>
+
+      <% if (breaches.length === 0) { %>
+        <p class="card-text">
+          <%= checkSource.name %> kent je e-mailadres niet uit een datalek. Dat is geen garantie:
+          niet elk lek is bekend.
+        </p>
+      <% } else { %>
+        <ul class="findings">
+          <% for (const breach of breaches) { %>
+            <li class="finding">
+              <h3><%= breach.title %></h3>
+              <p class="finding-meta">
+                <% if (breach.details.breachDate) { %>Gelekt op <%= formatDay(breach.details.breachDate) %><% } %>
+                <% if (breach.details.breachDate && breach.details.pwnCount) { %> · <% } %>
+                <% if (breach.details.pwnCount) { %><%= breach.details.pwnCount.toLocaleString('nl-NL') %> accounts<% } %>
+              </p>
+              <% if (breach.details.dataClasses && breach.details.dataClasses.length) { %>
+                <ul class="chips" aria-label="Gelekte gegevens">
+                  <% for (const item of breach.details.dataClasses) { %><li><%= dataClassLabel(item) %></li><% } %>
+                </ul>
+              <% } %>
+              <% if (breach.details.description) { %>
+                <p class="finding-text"><%= breach.details.description %></p>
+              <% } %>
+              <% if (breach.url) { %>
+                <p class="finding-link">
+                  <a href="<%= breach.url %>" target="_blank" rel="noopener noreferrer">Meer over dit datalek<%= sourceById(breach.details.source).id === 'hibp' ? ' bij Have I Been Pwned' : '' %></a>
+                </p>
+              <% } %>
+            </li>
+          <% } %>
+        </ul>
+        <p class="advice">
+          <strong>Wat kun je doen?</strong> Gebruik voor elke dienst in dit lijstje een eigen,
+          nieuw wachtwoord en zet tweestapsverificatie aan.
+        </p>
+      <% } %>
+    <% } %>
+
+    <% const shown = [...new Set([checkSource, ...breaches.map((item) => sourceById(item.details.source))])]; %>
+    <p class="hint">
+      Bron: <% shown.forEach((source, index) => { %><%= index > 0 ? ' en ' : '' %><a href="<%= source.url %>" target="_blank" rel="noopener noreferrer"><%= source.name %></a><%= source.credit ? ` (${source.credit})` : '' %><% }) %>.
+    </p>
+  </article>
+
+  <article class="card" id="web">
+    <header class="card-head">
+      <h2>Op het web</h2>
+      <% if (webScan) { %><span class="badge"><%= web.length %> gevonden</span><% } %>
+    </header>
+
+    <% if (!webScan) { %>
+      <p class="card-text">Je hebt nog niet gezocht. Dat doe je op je <a href="/dashboard">dashboard</a>.</p>
+    <% } else { %>
+      <% if (searchIsDemo) { %>
+        <p class="alert alert-warning notice-top" role="note">
+          <strong>Voorbeeldresultaten.</strong> Er is nog geen echte zoekdienst gekoppeld, dus dit is
+          nepdata om te laten zien hoe het werkt. Er is niets naar buiten gestuurd.
+        </p>
+      <% } %>
+      <p class="hint notice-top">
+        Laatst gezocht op <%= formatDateTime(webScan.ran_at) %> naar <code><%= webScan.detail %></code>.
+      </p>
+
+      <% if (web.length === 0) { %>
+        <p class="card-text">De zoekdienst vond niets bij deze zoekopdracht.</p>
+      <% } else { %>
+        <p class="card-text">
+          Beoordeel elk resultaat, dan houd je overzicht. Veel resultaten zijn van naamgenoten:
+          kies dan "Dit ben ik niet".
+        </p>
+        <ul class="findings">
+          <% for (const item of web) { %>
+            <li class="finding" id="resultaat-<%= item.id %>">
+              <h3><a href="<%= item.url %>" target="_blank" rel="noopener noreferrer nofollow"><%= item.title %></a></h3>
+              <p class="finding-link"><%= item.url %></p>
+              <% if (item.details.snippet) { %>
+                <p class="finding-text"><%= item.details.snippet %></p>
+              <% } %>
+              <form method="post" action="/resultaten/<%= item.id %>" class="choices">
+                <% for (const [value, label] of Object.entries(choices)) { %>
+                  <button type="submit" name="status" value="<%= value %>"
+                          class="button button-choice<%= item.status === value ? ' is-active' : '' %>"
+                          aria-pressed="<%= item.status === value %>"><%= label %></button>
+                <% } %>
+              </form>
+            </li>
+          <% } %>
+        </ul>
+        <% const mineCount = web.filter((item) => item.status === 'mine').length; %>
+        <% const newCount = web.filter((item) => item.status === 'new').length; %>
+        <p class="advice">
+          <%= mineCount === 1 ? '1 resultaat' : mineCount + ' resultaten' %> gemarkeerd als "Dit ben ik".
+          <% if (newCount > 0) { %>Nog te beoordelen: <%= newCount %>.<% } %>
+        </p>
+      <% } %>
+    <% } %>
+  </article>
+</div>
+
+<%- include('partials/foot') %>

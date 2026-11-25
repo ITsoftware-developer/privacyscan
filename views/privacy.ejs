@@ -1,9 +1,9 @@
-<%# Werk deze tekst bij zodra de app meer gegevens verwerkt, zoals in fase 2 en 3. %>
+<%# Werk deze tekst bij zodra de app meer gegevens verwerkt, bijvoorbeeld bij automatisch opnieuw zoeken (fase 4). %>
 <%- include('partials/head', { title: 'Privacyverklaring' }) %>
 
 <article class="card prose">
   <h1>Privacyverklaring</h1>
-  <p class="lead">Versie van 24 november 2026</p>
+  <p class="lead">Versie van 25 november 2026</p>
 
   <% if (!contact.name || !contact.email) { %>
     <p class="alert alert-warning" role="note">
@@ -36,18 +36,79 @@
       controleren we dat jij het bent. Je wachtwoord zelf bewaren we nooit.
     </li>
     <li>
+      <strong>Of je e-mailadres bevestigd is, en sinds wanneer.</strong> Om dat
+      te controleren mailen we je een link met een willekeurige code. In de
+      database staat alleen een hash van die code, dus niemand kan de link uit
+      de database halen. De link is <%= confirmMinutes %> minuten geldig en werkt één keer.
+      Zolang je adres niet bevestigd is, zoeken we niets voor je op.
+    </li>
+    <% if (searchPolicy.allowed || searchPolicy.ownerOnly) { %>
+      <li>
+        <strong>Je woonplaats</strong>, als je die zelf invult<% if (searchPolicy.ownerOnly) { %> (alleen de beheerder kan dat)<% } %>. We gebruiken hem
+        alleen om de zoekopdracht op het web nauwkeuriger te maken. Je kunt hem
+        altijd wijzigen of leegmaken op de pagina "Zoekgegevens".
+      </li>
+    <% } %>
+    <li>
+      <strong>Wat de zoekopdrachten vinden en wat jij daarvan vindt.</strong> Dat
+      zijn de datalekken waarin jouw e-mailadres voorkomt (de naam van het lek,
+      de datum en welke soorten gegevens eruit zijn gelekt), de webresultaten
+      (titel, adres en een korte tekst), jouw keuze per webresultaat ("Dit ben
+      ik", "Dit ben ik niet" of "Weet ik niet") en wanneer je voor het laatst
+      gezocht hebt. Dit is nodig om je de dienst te geven waar je om vraagt
+      (artikel 6 lid 1 onder b AVG).
+    </li>
+    <li>
       <strong>Een sessiecookie</strong>, zodat je ingelogd blijft. Zonder dit
       cookie werkt inloggen niet, daarom vragen we er geen toestemming voor.
       Andere cookies gebruiken we niet: geen statistieken, geen advertenties,
       geen tracking.
     </li>
     <li>
-      <strong>Gehashte IP-adressen en e-mailadressen bij inlogpogingen</strong>,
-      om te voorkomen dat iemand wachtwoorden gaat raden. Dat doen we omdat we
-      de site en jouw account willen beveiligen (gerechtvaardigd belang,
-      artikel 6 lid 1 onder f AVG).
+      <strong>Tellers met gehashte gegevens</strong> (een IP-adres, e-mailadres of
+      account) bij aanmelden, inloggen, nieuwe bevestigingsmails, zoekopdrachten en
+      controles van e-mailadressen, om te voorkomen dat iemand wachtwoorden gaat raden
+      of de site gaat misbruiken. Bij een controle van een e-mailadres tellen we alleen
+      per IP-adres, nooit per adres dat je intypt.
+      Dat doen we omdat we de site en jouw account willen beveiligen
+      (gerechtvaardigd belang, artikel 6 lid 1 onder f AVG).
     </li>
   </ul>
+
+  <h2>Waarop we zoeken</h2>
+  <p>
+    Met een account zoeken we alleen naar <strong>jezelf</strong>: in datalekken op het
+    e-mailadres van je account, en op het web op de naam van je account (en je woonplaats,
+    als je die hebt ingevuld). Er is geen zoekvak waarin je een andere naam kunt invullen,
+    en dat is bewust zo.
+  </p>
+  <p>
+    Op de startpagina kan <strong>iedereen een e-mailadres controleren</strong>, ook zonder
+    account en ook het adres van iemand anders, zoals bij Have I Been Pwned zelf. We laten
+    dan alleen zien in welke bekende datalekken dat adres voorkomt: de naam van het lek, de
+    datum en welke soorten gegevens eruit zijn gelekt. Nooit de gelekte gegevens zelf, zoals
+    wachtwoorden, en niets over wie er achter het adres zit. Gevoelige datalekken, zoals die
+    van datingsites, laten we nooit zien. <strong>Het adres dat je intypt, bewaren we niet.</strong>
+    We gebruiken het alleen om het op te zoeken, omdat we mensen willen laten zien of hun
+    adres in een bekend datalek staat (gerechtvaardigd belang, artikel 6 lid 1 onder f AVG).
+  </p>
+  <% if (searchPolicy.ownerOnly) { %>
+    <p>
+      <strong>Zoeken op naam staat op deze site uit, behalve voor de beheerder.</strong>
+      Een bevestigd e-mailadres bewijst namelijk niet dat de naam in een account ook
+      echt van die persoon is. Zolang we identiteiten niet kunnen controleren, zoekt
+      alleen de beheerder van de site op naam, en alleen op zijn eigen naam. Voor alle
+      andere gebruikers zoeken we niet op naam, en gaat er dus ook geen naam naar een
+      zoekdienst.
+    </p>
+  <% } else if (!searchPolicy.allowed) { %>
+    <p>
+      <strong>Zoeken op naam staat op deze site uit.</strong> Een bevestigd
+      e-mailadres bewijst namelijk niet dat de naam in je account ook echt van
+      jou is. Zolang we je identiteit niet kunnen controleren, zoeken we daarom
+      niet op naam, en gaat er dus ook geen naam naar een zoekdienst.
+    </p>
+  <% } %>
 
   <h2>Met wie we gegevens delen</h2>
   <ul>
@@ -55,6 +116,49 @@
       Als je een wachtwoord kiest, checken we of het in een bekend datalek staat,
       via Have I Been Pwned. Daarbij gaan alleen de eerste 5 tekens van een hash
       van je wachtwoord naar hen; je wachtwoord zelf en je e-mailadres niet.
+    </li>
+    <li>
+      Als je zoekt in datalekken, sturen we <strong>je e-mailadres</strong> naar
+      <%= breachSources.map((item) => `${item.name} (${sourceHost(item)})`).join(' of ') %>.
+      Zij zoeken het adres op in hun lijst met bekende datalekken en sturen informatie
+      over die lekken terug. De gegevens over de lekken komen van hen.
+    </li>
+    <li>
+      Als je op de startpagina een e-mailadres controleert, sturen we ook dat adres naar
+      <%= breachSources.map((item) => item.name).join(' of ') %>, op dezelfde manier. Wij bewaren het niet;
+      voor wat zij ermee doen gelden hun eigen voorwaarden.
+    </li>
+    <% if (searchPolicy.allowed && searchPolicy.isDemo) { %>
+      <li>
+        Het zoeken op het web is op dit moment een <strong>demo met verzonnen
+        resultaten</strong>. Daarbij gaat er niets naar buiten.
+      </li>
+    <% } else if (searchPolicy.allowed) { %>
+      <li>
+        Als je op het web zoekt, sturen we <strong>je naam</strong> (en je
+        woonplaats, als je die hebt ingevuld) naar de zoekdienst
+        <strong><%= searchPolicy.name %></strong>. Die dienst kan de zoekopdracht
+        volgens haar eigen voorwaarden bewaren.
+      </li>
+    <% } else if (searchPolicy.ownerOnly && searchPolicy.isDemo) { %>
+      <li>
+        Het zoeken op het web is op dit moment een <strong>demo met verzonnen
+        resultaten</strong>. Daarbij gaat er niets naar buiten. Voor andere gebruikers
+        dan de beheerder staat zoeken op naam uit.
+      </li>
+    <% } else if (searchPolicy.ownerOnly) { %>
+      <li>
+        Voor andere gebruikers dan de beheerder staat zoeken op naam uit: hun naam gaat
+        niet naar een zoekdienst. Zoekt de beheerder, dan gaat diens naam (en woonplaats)
+        naar de zoekdienst <strong><%= searchPolicy.name %></strong>. Die dienst kan de
+        zoekopdracht volgens haar eigen voorwaarden bewaren.
+      </li>
+    <% } else { %>
+      <li>Je naam gaat niet naar een zoekdienst, want zoeken op naam staat uit.</li>
+    <% } %>
+    <li>
+      Voor de bevestigingsmail gebruiken we een e-maildienst. Die ontvangt je
+      e-mailadres, je naam en de link in de mail, om de mail te kunnen bezorgen.
     </li>
     <li>
       Onze hostingpartij beheert de server waarop de site draait en verwerkt
@@ -66,19 +170,29 @@
   <h2>Hoe lang we gegevens bewaren</h2>
   <ul>
     <li>
-      Je naam, e-mailadres en wachtwoord-hash: zolang je account bestaat.
-      Verwijder je je account via je dashboard, dan wissen we ze meteen.
+      Je naam, e-mailadres, woonplaats, wachtwoord-hash, gevonden datalekken en
+      webresultaten en je keuzes: zolang je account bestaat. Verwijder je je
+      account via je dashboard, dan wissen we ze allemaal meteen.
     </li>
+    <li>Bevestigingslinks: <%= confirmMinutes %> minuten, of tot je ze gebruikt hebt.</li>
     <li>Sessies: maximaal 7 dagen, of korter als je uitlogt.</li>
-    <li>Tellers van inlogpogingen: maximaal een uur.</li>
+    <li>
+      Tellers van aanmeldingen, inlogpogingen, nieuwe mails, zoekopdrachten en controles van
+      e-mailadressen: maximaal een uur.
+    </li>
+    <li>
+      Het e-mailadres dat je op de startpagina controleert: we bewaren het niet, ook niet in
+      een logboek van de site.
+    </li>
   </ul>
 
   <h2>Je rechten</h2>
   <p>
     Je mag je gegevens inzien, laten corrigeren of laten verwijderen. Je mag
     bezwaar maken tegen het gebruik ervan en je gegevens meenemen naar een
-    andere dienst. Je account verwijderen kan zelf, via je dashboard. Voor de
-    rest mail je naar <strong><%= contact.email || '[jouw e-mailadres]' %></strong>;
+    andere dienst. Je account verwijderen kan zelf, via je dashboard<% if (searchPolicy.allowed) { %>,
+    en je woonplaats wijzig je zelf op de pagina "Zoekgegevens"<% } %>. Voor de rest mail je naar
+    <strong><%= contact.email || '[jouw e-mailadres]' %></strong>;
     je krijgt binnen een maand antwoord.
   </p>
 

@@ -1,0 +1,24 @@
+<%- include('partials/head', { title: 'E-mailadres bevestigen' }) %>
+
+<section class="card form-card">
+  <h1>E-mailadres bevestigen</h1>
+
+  <% if (state === 'form') { %>
+    <p class="lead">Klik op de knop om te bevestigen dat dit e-mailadres van jou is.</p>
+    <form method="post" action="/e-mail-bevestigen">
+      <input type="hidden" name="token" value="<%= token %>">
+      <button type="submit" class="button button-primary">Ja, dit is mijn e-mailadres</button>
+    </form>
+  <% } else if (state === 'done') { %>
+    <p class="alert alert-ok" role="status">Gelukt: je e-mailadres is bevestigd.</p>
+    <p><a class="button button-action" href="/dashboard">Naar je dashboard</a></p>
+  <% } else { %>
+    <p class="alert alert-error" role="alert">
+      Deze link werkt niet (meer). Hij is verlopen of al gebruikt.
+    </p>
+    <p class="lead">Log in en vraag op je dashboard een nieuwe bevestigingsmail aan.</p>
+    <p><a href="/dashboard">Naar je dashboard</a></p>
+  <% } %>
+</section>
+
+<%- include('partials/foot') %>

@@ -2,71 +2,11 @@
 // Draaien met: npm test
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createApp } from '../src/app.js';
 import { openDatabase } from '../src/db.js';
+import {
+  ANNA, alertText, countUsers, login, register, send, sessionCookie, startServer,
+} from './helpers.js';
 
-const ANNA = {
-  naam: 'Anna de Vries',
-  email: 'anna@example.com',
-  wachtwoord: 'paars konijn op de fiets',
-  wachtwoord2: 'paars konijn op de fiets',
-};
-
-// Start de app met een lege database in het geheugen (of met de database die je
-// meegeeft). De wachtwoordcheck tegen datalekken staat uit, zodat de tests
-// zonder internet werken.
-async function startServer(t, options = {}) {
-  const db = options.db ?? openDatabase(':memory:');
-  const app = createApp({ pwnedCheck: async () => false, ...options, db });
-  const server = await new Promise((resolve) => {
-    const s = app.listen(0, '127.0.0.1', () => resolve(s));
-  });
-  const close = () => {
-    server.closeAllConnections();
-    return new Promise((resolve) => server.close(resolve));
-  };
-  t.after(close);
-  return { db, close, base: `http://127.0.0.1:${server.address().port}` };
-}
-
-// Doet een verzoek zoals een browser dat zou doen. Bij een formulier sturen
-// browsers de headers Origin en Sec-Fetch-Site mee; met null laat je er een weg.
-function send(base, path, { method = 'GET', fields, cookie, origin = base, fetchSite = 'same-origin' } = {}) {
-  const headers = {};
-  if (cookie) headers.cookie = cookie;
-  if (method !== 'GET') {
-    headers['content-type'] = 'application/x-www-form-urlencoded';
-    if (origin !== null) headers.origin = origin;
-    if (fetchSite !== null) headers['sec-fetch-site'] = fetchSite;
-  }
-  return fetch(base + path, {
-    method,
-    headers,
-    body: fields ? new URLSearchParams(fields) : undefined,
-    redirect: 'manual',
-  });
-}
-
-function register(base, fields = ANNA, extra = {}) {
-  return send(base, '/registreren', { method: 'POST', fields, ...extra });
-}
-
-function login(base, email, wachtwoord) {
-  return send(base, '/inloggen', { method: 'POST', fields: { email, wachtwoord } });
-}
-
-function sessionCookie(response) {
-  const line = response.headers.getSetCookie().find((c) => c.startsWith('sessie='));
-  return line?.split(';')[0];
-}
-
-function alertText(html) {
-  return html.match(/class="alert alert-error"[^>]*>([^<]*)</)?.[1].trim();
-}
-
-function countUsers(db) {
-  return db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
-}
 
 test('registreren maakt een account aan en logt je meteen in', async (t) => {
   const { base } = await startServer(t);
@@ -307,9 +247,11 @@ test('beveiligingsheaders staan aan', async (t) => {
   assert.equal(response.headers.get('x-powered-by'), null);
 });
 
-test('de startpagina stuurt je naar inloggen of naar je dashboard', async (t) => {
+test('de startpagina is voor iedereen, en stuurt ingelogde mensen naar hun dashboard', async (t) => {
   const { base } = await startServer(t);
-  assert.equal((await send(base, '/')).headers.get('location'), '/inloggen');
+  const home = await send(base, '/');
+  assert.equal(home.status, 200); // de e-mailcontrole, zonder dat je moet inloggen
+  assert.equal(home.headers.get('location'), null);
 
   const cookie = sessionCookie(await register(base));
   for (const path of ['/', '/inloggen', '/registreren']) {

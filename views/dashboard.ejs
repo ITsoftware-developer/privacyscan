@@ -2,58 +2,151 @@
 
 <section class="welcome">
   <h1>Hoi <%= user.name %></h1>
-  <p class="lead">Dit is je privacy-dashboard. Hier zie je straks waar je gegevens online staan en wat je eraan doet.</p>
+  <p class="lead">Dit is je privacy-dashboard. Hier zie je waar je gegevens online staan.</p>
 </section>
+
+<% if (notice) { %>
+  <p class="alert alert-ok notice-top" role="status"><%= notice %></p>
+<% } %>
 
 <ol class="steps" aria-label="Voortgang van het project">
   <li class="step done"><span class="step-dot" aria-hidden="true">✓</span>Basis</li>
-  <li class="step"><span class="step-dot">2</span>Zoeken</li>
-  <li class="step"><span class="step-dot">3</span>Verwijderen</li>
-  <li class="step"><span class="step-dot">4</span>Automatisch</li>
+  <li class="step done"><span class="step-dot" aria-hidden="true">✓</span>Zoeken</li>
+  <li class="step"><span class="step-dot">3</span>Automatisch</li>
 </ol>
 
 <div class="grid">
   <article class="card card-wide">
     <header class="card-head">
       <h2>Je account</h2>
-      <span class="badge badge-ok">Klaar</span>
+      <% if (user.email_confirmed_at) { %>
+        <span class="badge badge-ok">Klaar</span>
+      <% } else { %>
+        <span class="badge badge-warn">Actie nodig</span>
+      <% } %>
     </header>
     <dl class="facts">
-      <dt>E-mailadres</dt><dd><%= user.email %></dd>
+      <dt>E-mailadres</dt>
+      <dd>
+        <%= user.email %>
+        <% if (user.email_confirmed_at) { %>
+          <span class="badge badge-ok">Bevestigd</span>
+        <% } else { %>
+          <span class="badge badge-warn">Nog niet bevestigd</span>
+        <% } %>
+      </dd>
       <dt>Lid sinds</dt><dd><%= memberSince %></dd>
       <dt>Wachtwoord</dt><dd>Veilig opgeslagen met argon2id</dd>
     </dl>
+
+    <% if (!user.email_confirmed_at) { %>
+      <div class="alert alert-warning notice-top" role="note">
+        <strong>Bevestig je e-mailadres.</strong>
+        Klik op de link in de bevestigingsmail; die is <%= confirmMinutes %> minuten geldig.
+        Zonder bevestiging zoeken we nog niets voor je op.
+        <% if (devMail) { %>
+          Je draait de site op je eigen computer, dus de mail staat in het
+          <a href="/dev/mails">testpostvak</a>.
+        <% } %>
+      </div>
+      <form method="post" action="/bevestiging-opnieuw">
+        <button type="submit" class="button button-action">Stuur de mail opnieuw</button>
+      </form>
+    <% } %>
+
     <p class="card-foot"><a class="link-danger" href="/account/verwijderen">Account verwijderen</a></p>
   </article>
 
-  <article class="card card-soon">
+  <article class="card">
     <header class="card-head">
       <h2>Datalekken</h2>
-      <span class="badge">Fase 2</span>
+      <% if (counts.breaches > 0) { %>
+        <span class="badge badge-warn"><%= counts.breaches %> gevonden</span>
+      <% } else if (breachScan) { %>
+        <span class="badge badge-ok">Gecontroleerd</span>
+      <% } %>
     </header>
-    <p class="card-text">Check of <strong><%= user.email %></strong> in bekende datalekken zit, via Have I Been Pwned.</p>
+
+    <% if (!confirmed) { %>
+      <p class="card-text">Bevestig eerst je e-mailadres. Daarna kun je hier zoeken in bekende datalekken.</p>
+    <% } else { %>
+      <p class="card-text">
+        Check of <strong><%= user.email %></strong> in bekende datalekken zit, via
+        <a href="<%= checkSource.url %>" target="_blank" rel="noopener noreferrer"><%= checkSource.name %></a>.
+        Daarvoor sturen we dit e-mailadres naar hen.
+      </p>
+      <% if (canScanBreaches && checkSource.id === 'xon') { %>
+        <p class="hint">Gratis via XposedOrNot: maximaal 25 controles per uur en 100 per dag.</p>
+      <% } %>
+      <% if (canScanBreaches) { %>
+        <form method="post" action="/scan/datalekken">
+          <button type="submit" class="button button-action">Zoek in datalekken</button>
+        </form>
+      <% } else { %>
+        <p class="alert alert-warning card-alert" role="note">
+          Voor dit adres is een HIBP-sleutel nodig. Zonder sleutel werken alleen testadressen,
+          zoals <code>account-exists@hibp-integration-tests.com</code>. Zet de gratis controle aan
+          (<code>FREE_BREACH_CHECK=on</code> in je .env) of zie de README.
+        </p>
+      <% } %>
+      <% if (breachScan) { %>
+        <p class="hint">
+          Laatst gecontroleerd op <%= formatDateTime(breachScan.ran_at) %>.
+          <a href="/resultaten#datalekken">Bekijk de resultaten</a>
+        </p>
+      <% } %>
+    <% } %>
+    <p class="hint"><a href="/controle">Een ander e-mailadres controleren</a>, zonder dat we het bewaren.</p>
   </article>
 
-  <article class="card card-soon">
+  <article class="card">
     <header class="card-head">
       <h2>Waar sta je online?</h2>
-      <span class="badge">Fase 2</span>
+      <% if (counts.webNew > 0) { %>
+        <span class="badge badge-warn"><%= counts.webNew %> te beoordelen</span>
+      <% } else if (counts.web > 0) { %>
+        <span class="badge badge-ok">Beoordeeld</span>
+      <% } %>
     </header>
-    <p class="card-text">Zoek op welke sites je naam opduikt, en kies wat je weg wilt hebben.</p>
-  </article>
 
-  <article class="card card-soon">
-    <header class="card-head">
-      <h2>Verwijderverzoeken</h2>
-      <span class="badge">Fase 3</span>
-    </header>
-    <p class="card-text">Per site een AVG-verwijderverzoek, met de status: verstuurd, beantwoord of verwijderd.</p>
+    <% if (!searchAllowed && !ownerPending) { %>
+      <p class="card-text">
+        Zoeken op je naam staat uit op een openbare site. Een bevestigd e-mailadres bewijst namelijk
+        niet dat een naam van jou is.
+      </p>
+    <% } else if (!confirmed) { %>
+      <p class="card-text">Bevestig eerst je e-mailadres. Daarna kun je hier zoeken waar je naam online opduikt.</p>
+    <% } else { %>
+      <p class="card-text">
+        We zoeken op jouw naam, <strong><%= user.name %></strong><% if (user.city) { %> en <strong><%= user.city %></strong><% } %>.
+        <a href="/profiel">Woonplaats <%= user.city ? 'wijzigen' : 'toevoegen' %></a>
+      </p>
+      <% if (ownerMode) { %>
+        <p class="hint">Je bent de beheerder van deze site. Alleen jij mag hier op naam zoeken, zonder identiteitscheck.</p>
+      <% } %>
+      <p class="hint">
+        <% if (searchIsDemo) { %>
+          Voorbeeldstand: er is nog geen echte zoekdienst gekoppeld, dus je krijgt nepdata en er gaat niets naar buiten.
+        <% } else { %>
+          Daarvoor sturen we je naam naar de zoekdienst.
+        <% } %>
+      </p>
+      <form method="post" action="/scan/web">
+        <button type="submit" class="button button-action">Zoek op het web</button>
+      </form>
+      <% if (webScan) { %>
+        <p class="hint">
+          Laatst gezocht op <%= formatDateTime(webScan.ran_at) %>.
+          <a href="/resultaten#web">Bekijk en beoordeel de resultaten</a>
+        </p>
+      <% } %>
+    <% } %>
   </article>
 
   <article class="card card-soon">
     <header class="card-head">
       <h2>Automatisch scannen</h2>
-      <span class="badge">Fase 4</span>
+      <span class="badge">Straks</span>
     </header>
     <p class="card-text">Regelmatig opnieuw zoeken, en een mail als er iets nieuws is gevonden.</p>
   </article>

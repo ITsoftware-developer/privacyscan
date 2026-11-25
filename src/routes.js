@@ -1,4 +1,6 @@
-// Alle pagina's van de site: registreren, inloggen, uitloggen en het dashboard.
+// De pagina's rond je account: registreren, inloggen, uitloggen en je account
+// verwijderen. De startpagina en de e-mailcontrole staan in routes-public.js, het
+// dashboard en het zoeken in routes-scan.js.
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import {
@@ -10,20 +12,20 @@ import {
   requireLogin,
   verifyPassword,
 } from './auth.js';
+import { isValidEmail, normalizeEmail } from './email.js';
 import { SqliteStore } from './limit-store.js';
 
 const FIFTEEN_MINUTES = 15 * 60 * 1000;
 const ONE_HOUR = 60 * 60 * 1000;
 const MIN_PASSWORD = 12;
 const MAX_PASSWORD = 128;
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const EMAIL_TAKEN = 'Er bestaat al een account met dit e-mailadres. Wil je inloggen?';
 
 // Haalt de velden uit een verstuurd formulier en maakt ze netjes.
 function readForm(body = {}) {
   return {
     name: String(body.naam ?? '').trim(),
-    email: String(body.email ?? '').trim().toLowerCase(),
+    email: normalizeEmail(body.email),
     password: String(body.wachtwoord ?? ''),
     password2: String(body.wachtwoord2 ?? ''),
   };
@@ -32,14 +34,16 @@ function readForm(body = {}) {
 // Geeft een foutmelding terug, of null als alles klopt.
 function checkRegistration({ name, email, password, password2 }) {
   if (!name || name.length > 80) return 'Vul je naam in (maximaal 80 tekens).';
-  if (!EMAIL_PATTERN.test(email) || email.length > 254) return 'Vul een geldig e-mailadres in.';
+  if (!isValidEmail(email)) return 'Vul een geldig e-mailadres in.';
   if (password.length < MIN_PASSWORD) return `Kies een wachtwoord van minimaal ${MIN_PASSWORD} tekens.`;
   if (password.length > MAX_PASSWORD) return `Je wachtwoord mag maximaal ${MAX_PASSWORD} tekens zijn.`;
   if (password !== password2) return 'De twee wachtwoorden zijn niet hetzelfde.';
   return null;
 }
 
-export function createRoutes({ db, production, pwnedCheck, loginLimit, accountLimit, registerLimit }) {
+export function createRoutes({
+  db, production, pwnedCheck, loginLimit, accountLimit, registerLimit, sendConfirmation,
+}) {
   const router = Router();
 
   // Maakt een sessie aan en zet het token in een cookie.
@@ -118,10 +122,6 @@ export function createRoutes({ db, production, pwnedCheck, loginLimit, accountLi
     },
   });
 
-  router.get('/', (req, res) => {
-    res.redirect(303, req.user ? '/dashboard' : '/inloggen');
-  });
-
   router.get('/privacy', (req, res) => {
     res.render('privacy', { wide: true });
   });
@@ -163,6 +163,14 @@ export function createRoutes({ db, production, pwnedCheck, loginLimit, accountLi
     }
 
     startSession(res, Number(userId));
+
+    // De bevestigingsmail is belangrijk, maar een mislukte mail mag de aanmelding niet
+    // laten mislukken: op het dashboard kun je een nieuwe aanvragen.
+    try {
+      await sendConfirmation({ id: Number(userId), name: form.name, email: form.email });
+    } catch (error) {
+      console.error(`Bevestigingsmail versturen mislukte: ${error.message}`);
+    }
     res.redirect(303, '/dashboard');
   });
 
@@ -201,17 +209,6 @@ export function createRoutes({ db, production, pwnedCheck, loginLimit, accountLi
     res.redirect(303, '/inloggen?uitgelogd');
   });
 
-  // --- Dashboard -----------------------------------------------------------
-
-  router.get('/dashboard', requireLogin, (req, res) => {
-    const memberSince = new Date(req.user.created_at).toLocaleDateString('nl-NL', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    });
-    res.render('dashboard', { memberSince, wide: true });
-  });
-
   // --- Account verwijderen -------------------------------------------------
 
   router.get('/account/verwijderen', requireLogin, (req, res) => {
@@ -228,9 +225,9 @@ export function createRoutes({ db, production, pwnedCheck, loginLimit, accountLi
       });
     }
 
-    // Sessies verdwijnen automatisch mee (ON DELETE CASCADE in db.js). Geef
-    // nieuwe tabellen in de volgende fases ook ON DELETE CASCADE, dan blijft
-    // dit ene commando genoeg om alles van iemand te wissen.
+    // Sessies, bevestigingslinks en scanresultaten verdwijnen automatisch mee (ON
+    // DELETE CASCADE in db.js). Geef nieuwe tabellen in de volgende fases ook ON
+    // DELETE CASCADE, dan blijft dit ene commando genoeg om alles van iemand te wissen.
     db.prepare('DELETE FROM users WHERE id = ?').run(req.user.id);
     res.clearCookie(COOKIE_NAME, { path: '/' });
     res.redirect(303, '/inloggen?verwijderd');

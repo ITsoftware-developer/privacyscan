@@ -1,0 +1,113 @@
+<%- include('partials/head', { title: 'Controleer een e-mailadres' }) %>
+
+<section class="hero">
+  <h1>Staat dit e-mailadres in een datalek?</h1>
+  <p class="lead">
+    Typ een e-mailadres in en we kijken of het voorkomt in bekende datalekken. Je ziet alleen
+    <em>in welk lek</em> het zat en welke soorten gegevens er zijn gelekt, nooit de gegevens zelf.
+  </p>
+
+  <% if (error) { %>
+    <p class="alert alert-error" role="alert"><%= error %></p>
+  <% } %>
+
+  <form method="post" action="/controle" class="check-form">
+    <label for="email" class="visually-hidden">E-mailadres</label>
+    <input id="email" name="email" type="email" autocomplete="email" required maxlength="254"
+           placeholder="naam@voorbeeld.nl" value="<%= email %>">
+    <button type="submit" class="button button-action">Controleer</button>
+  </form>
+  <p class="hint">Het adres dat je intypt, bewaren we niet.</p>
+
+  <% if (testMode) { %>
+    <p class="alert alert-warning notice-top" role="note">
+      <strong>Testmodus.</strong> Deze site heeft nog geen eigen sleutel van Have I Been Pwned, dus
+      alleen hun testadressen werken. Probeer <code>multiple-breaches@hibp-integration-tests.com</code>
+      (drie lekken), <code>account-exists@hibp-integration-tests.com</code> (één lek) of
+      <code>not-active-breach@hibp-integration-tests.com</code> (geen lekken).
+    </p>
+  <% } %>
+</section>
+
+<% if (result) { %>
+  <section class="card result" aria-live="polite">
+    <% if (result.breaches.length === 0) { %>
+      <h2 class="result-title result-ok">Goed nieuws: geen datalek gevonden</h2>
+      <p class="card-text">
+        <%= result.source.name %> kent <strong><%= email %></strong> niet uit een bekend datalek. Dat is geen
+        garantie: niet elk lek is bekend.
+      </p>
+    <% } else { %>
+      <h2 class="result-title result-warn">
+        <%= result.breaches.length === 1 ? 'Dit adres staat in 1 bekend datalek' : `Dit adres staat in ${result.breaches.length} bekende datalekken` %>
+      </h2>
+      <p class="card-text"><strong><%= email %></strong> kwam voor in de lekken hieronder.</p>
+
+      <ul class="findings">
+        <% for (const breach of result.breaches) { %>
+          <li class="finding">
+            <h3><%= breach.title %></h3>
+            <p class="finding-meta">
+              <% if (breach.breachDate) { %>Gelekt op <%= formatDay(breach.breachDate) %><% } %>
+              <% if (breach.breachDate && breach.pwnCount) { %> · <% } %>
+              <% if (breach.pwnCount) { %><%= breach.pwnCount.toLocaleString('nl-NL') %> accounts<% } %>
+            </p>
+            <% if (breach.dataClasses.length) { %>
+              <ul class="chips" aria-label="Gelekte gegevens">
+                <% for (const item of breach.dataClasses) { %><li><%= dataClassLabel(item) %></li><% } %>
+              </ul>
+            <% } %>
+            <% if (breach.description) { %>
+              <p class="finding-text"><%= breach.description %></p>
+            <% } %>
+            <% if (breach.url) { %>
+              <p class="finding-link">
+                <a href="<%= breach.url %>" target="_blank" rel="noopener noreferrer">Meer over dit datalek<%= result.source.id === 'hibp' ? ' bij Have I Been Pwned' : '' %></a>
+              </p>
+            <% } %>
+          </li>
+        <% } %>
+      </ul>
+
+      <p class="advice">
+        <strong>Wat kun je doen?</strong> Gebruik voor elke dienst in dit lijstje een eigen, nieuw
+        wachtwoord (een wachtwoordmanager helpt daarbij) en zet tweestapsverificatie aan. Gebruikte je
+        dat wachtwoord ook ergens anders, verander het daar dan ook. Wees na een lek extra alert op
+        nepmails die doen alsof ze van die dienst komen.
+      </p>
+    <% } %>
+
+    <p class="hint">
+      Bron: <a href="<%= result.source.url %>" target="_blank" rel="noopener noreferrer"><%= result.source.name %></a><%= result.source.credit ? ` (${result.source.credit})` : '' %>.
+      Uit voorzorg tonen we geen gevoelige lekken, zoals die van datingsites, ook niet als het adres
+      erin staat. Dit adres is niet bewaard.
+    </p>
+  </section>
+<% } %>
+
+<section class="card promises">
+  <h2>Hoe gaan we met een adres om?</h2>
+  <ul>
+    <li>
+      <strong>We bewaren het niet.</strong> Het adres gaat naar <%= emailSources.map((item) => item.name).join(' of ') %>,
+      wij tonen wat zij terugsturen, en daarna is het weg.
+    </li>
+    <li>
+      <strong>Je ziet geen gelekte gegevens.</strong> Alleen de naam van het lek, de datum en welke
+      soorten gegevens eruit zijn gelekt.
+    </li>
+    <li>
+      <strong>Geen zoekvak voor namen.</strong> We zoeken niet naar mensen: je kunt hier alleen
+      controleren of een e-mailadres in een bekend datalek voorkomt.
+    </li>
+  </ul>
+  <p class="switch">
+    <% if (locals.user) { %>
+      <a href="/dashboard">Naar je dashboard</a>
+    <% } else { %>
+      Heb je een account? <a href="/inloggen">Inloggen</a> · <a href="/registreren">Account maken</a>
+    <% } %>
+  </p>
+</section>
+
+<%- include('partials/foot') %>
