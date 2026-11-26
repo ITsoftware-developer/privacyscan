@@ -7,7 +7,7 @@ import { createHibp } from '../src/hibp.js';
 import { ScanError } from '../src/scan-error.js';
 import { createXon } from '../src/xon.js';
 import {
-  ADOBE, fakeHibp, fakeXonFetch, jsonResponse, registerConfirmed, send, startServer, xonFound, xonRaw,
+  ADOBE, fakeHibp, fakeSearch, fakeXonFetch, jsonResponse, registerConfirmed, send, startServer, xonFound, xonRaw,
 } from './helpers.js';
 
 // De zichtbare tekst van een pagina: zonder tags, met enkele spaties en zonder spatie voor leestekens.
@@ -64,9 +64,11 @@ test('de bronnenpagina is openbaar en zegt eerlijk wat werkt en wat nog niet bes
     XposedOrNot: 'Uit',
     'Pwned Passwords': 'Actief',
     'Zoekdienst voor het web (Brave Search)': 'Demo (nepdata)',
-    Databrokers: 'Gepland',
-    'Sociale media': 'Gepland',
-    'Openbare documenten': 'Gepland',
+    Databrokers: 'Demo (nepdata)',
+    'Sociale media': 'Demo (nepdata)',
+    'Openbare documenten': 'Demo (nepdata)',
+    'Je telefoonnummer': 'Demo (nepdata)',
+    'Je e-mailadres op het web': 'Demo (nepdata)',
     Darkwebmonitoring: 'Gepland',
   });
   assert.match(READABLE(html), /Alleen wat hier Actief heet, werkt echt\./);
@@ -89,7 +91,7 @@ test('met de gratis dienst aan is XposedOrNot actief, en HIBP nog steeds niet', 
   assert.equal(registry['Have I Been Pwned'], 'Alleen testadressen');
 });
 
-test('de roadmap heeft zes fases, waarvan er twee klaar zijn, en belooft geen verwijderdienst', async (t) => {
+test('de roadmap heeft zes fases, waarvan er drie klaar zijn, en belooft geen verwijderdienst', async (t) => {
   const { base } = await startServer(t, { hibp: fakeHibp() });
   const html = await (await send(base, '/bronnen')).text();
   const text = READABLE(html);
@@ -99,7 +101,7 @@ test('de roadmap heeft zes fases, waarvan er twee klaar zijn, en belooft geen ve
   assert.deepEqual(phases, [
     ['1', 'Veilig fundament', 'Klaar'],
     ['2', 'Breach Intelligence Engine', 'Klaar'],
-    ['3', 'Data Broker Engine', 'Gepland'],
+    ['3', 'Data Broker Engine', 'Klaar'],
     ['4', 'Deep Research Engine', 'Gepland'],
     ['5', 'Eigen AI-agent', 'Gepland'],
     ['6', 'Continuous Monitoring', 'Gepland'],
@@ -158,10 +160,10 @@ test('de startpagina laat zien wat er te doen is, en noemt nog niets voltooid', 
 
   assert.deepEqual(stepsIn(html), [
     ['Datalekdatabases onderzoeken', 'Beschikbaar'],
-    ['Databrokers controleren', 'Nog niet gebouwd'],
+    ['Databrokers controleren', 'Met account'],
     ['Openbare internetbronnen onderzoeken', 'Met account'],
     ['Mogelijke blootstelling beoordelen', 'Na stap 1'],
-    ['Bewijs controleren', 'Na stap 1'],
+    ['Bewijs controleren en combineren', 'Na stap 1'],
   ]);
   assert.doesNotMatch(html, /Voltooid|Testmodus/);
   // De naam van het paneel zegt niet dat er een AI is: die bestaat pas in fase 5.
@@ -199,15 +201,16 @@ test('na een controle is precies wat gedaan is voltooid: de rest blijft overgesl
   const html = await (await check(base, 'lek@example.com')).text();
   assert.deepEqual(stepsIn(html), [
     ['Datalekdatabases onderzoeken', 'Voltooid'],
-    ['Databrokers controleren', 'Nog niet gebouwd'],
+    ['Databrokers controleren', 'Overgeslagen'],
     ['Openbare internetbronnen onderzoeken', 'Overgeslagen'],
     ['Mogelijke blootstelling beoordelen', 'Voltooid'],
-    ['Bewijs controleren', 'Voltooid'],
+    ['Bewijs controleren en combineren', 'Voltooid'],
   ]);
 
   const text = READABLE(html);
   assert.match(text, /2 datalekken gevonden bij XposedOrNot\./);
   assert.match(text, /Niet onderzocht: dat kan alleen in je eigen account, op je eigen naam\./);
+  assert.match(text, /Niet onderzocht: dat kan alleen in je eigen account, op je eigen gegevens\./);
   assert.match(text, /De lekken bevatten soorten gegevens als: inloggegevens \(in 1 lek\), telefoonnummers \(in 1 lek\)\./);
   assert.match(text, /Of jouw eigen gegevens daarbij zaten, melden de bronnen niet\./);
   // LinkedIn heeft bij XposedOrNot geen link: dat meldt de controle in plaats van het te verzwijgen.
@@ -233,7 +236,7 @@ test('geen lek gevonden: goed nieuws, en er valt geen bewijs te controleren', as
   const { base } = await startServer(t, { hibp });
 
   const html = await (await check(base, 'schoon@example.com')).text();
-  assert.deepEqual(labelsIn(html), ['Voltooid', 'Nog niet gebouwd', 'Overgeslagen', 'Voltooid', 'Overgeslagen']);
+  assert.deepEqual(labelsIn(html), ['Voltooid', 'Overgeslagen', 'Overgeslagen', 'Voltooid', 'Overgeslagen']);
   const text = READABLE(html);
   assert.match(text, /Geen datalek gevonden bij XposedOrNot\./);
   assert.match(text, /Er is geen datalek gevonden, dus er is niets om te beoordelen\./);
@@ -250,7 +253,7 @@ test('lukt de controle niet, dan staat er een foutmelding en blijft elke stap on
   assert.equal(response.status, 502);
   const html = await response.text();
   assert.match(READABLE(html), /Have I Been Pwned is nu niet bereikbaar/);
-  assert.deepEqual(labelsIn(html), ['Beschikbaar', 'Nog niet gebouwd', 'Met account', 'Na stap 1', 'Na stap 1']);
+  assert.deepEqual(labelsIn(html), ['Beschikbaar', 'Met account', 'Met account', 'Na stap 1', 'Na stap 1']);
   assert.doesNotMatch(html, /Voltooid/); // er is niets onderzocht, dus niets is voltooid
 });
 
@@ -266,4 +269,13 @@ test('de controle op de startpagina bewaart niets, ook het bewijs niet', async (
     assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n, 0, table);
   }
   assert.doesNotMatch(everythingInDatabase(db), /geheim\.adres|Adobe/);
+});
+
+test('op een openbare site staat je telefoonnummer op de bronnenpagina als niet ingesteld: er is geen sms-dienst', async (t) => {
+  const { base } = await startServer(t, { hibp: fakeHibp(), production: true, search: fakeSearch() });
+  const html = await (await send(base, '/bronnen')).text();
+  const register = registerIn(html);
+  assert.equal(register['Je telefoonnummer'], 'Niet ingesteld');
+  assert.equal(register['Je e-mailadres op het web'], 'Actief');
+  assert.match(READABLE(html), /Er is nog geen sms-dienst gekoppeld, dus niemand kan hier een telefoonnummer bevestigen/);
 });

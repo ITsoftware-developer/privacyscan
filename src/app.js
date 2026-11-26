@@ -6,9 +6,12 @@ import cookieParser from 'cookie-parser';
 import { join } from 'node:path';
 import { checkOrigin, loadUser } from './auth.js';
 import { CONFIRM_MINUTES, sendConfirmationMail } from './confirm.js';
+import { DEFAULT_LIMITS, budgetedSearch } from './budget.js';
 import { pausableBreachCheck, pausableSearch } from './controls.js';
-import { logEvent } from './events.js';
+import { JOB_ERRORS, logEvent } from './events.js';
 import { createHibp } from './hibp.js';
+import { viaText } from './findings.js';
+import { createWorker } from './jobs/worker.js';
 import { createMailer } from './mail.js';
 import { confidenceLabel, decisionLabel } from './confidence.js';
 import { dataClassLabel } from './data-classes.js';
@@ -21,7 +24,12 @@ import { WEB_RESULT_MINUTES } from './retention.js';
 import { createRoutes } from './routes.js';
 import { createAdminRoutes } from './routes-admin.js';
 import { createPublicRoutes } from './routes-public.js';
+import { createProfileRoutes } from './routes-profile.js';
 import { createScanRoutes } from './routes-scan.js';
+import { createResearchHandlers } from './research/orchestrator.js';
+import { formatPhone } from './phone.js';
+import { CODE_MINUTES } from './phone-codes.js';
+import { createSmsSender } from './sms.js';
 import { PHASES, evidenceSource, sourceById, sourceHost } from './sources.js';
 
 const ROOT = join(import.meta.dirname, '..');
@@ -44,14 +52,26 @@ export function createApp({
   ownerEmail = null,    // de beheerder: mag op een openbare site als enige op naam zoeken, en komt op /beheerder
   testLimit = 20,       // testknoppen op de beheerpagina per uur (elke test is een echte aanvraag)
   monitor = null,       // telt de aanvragen naar de externe diensten (zie monitor.js en server.js)
+  runJobsInline = false, // de tests: een onderzoek meteen uitvoeren; anders loopt het op de achtergrond (app.jobs.start() in server.js)
+  budget = DEFAULT_LIMITS, // kostenlimieten voor de zoekdienst: per dag, per maand en per onderzoek (zie budget.js)
+  sms = createSmsSender({ production }), // verstuurt de code om je telefoonnummer te bevestigen (zie sms.js)
+  phoneCodeLimit = 3,   // sms-codes per uur, per account en per telefoonnummer
 }) {
   const owner = parseOwnerEmail(ownerEmail);
   const meter = monitor ?? createMonitor(db);
   // Wat de rest van de site gebruikt: de zoekdienst en de controle op datalekken met de pauzeknop van
   // de beheerpagina ervoor (zie controls.js). De beheerpagina zelf krijgt de originelen, voor de testknoppen.
-  const guardedSearch = pausableSearch(search, db);
+  const guardedSearch = pausableSearch(budgetedSearch(search, db, budget), db);
   const guardedCheck = pausableBreachCheck(hibp, db);
+  // De onderzoekswachtrij: de werker voert een Deep Scan uit op de achtergrond (zie jobs/).
+  const jobs = createWorker({
+    db,
+    handlers: createResearchHandlers({
+      db, check: guardedCheck, search: guardedSearch, monitor: meter, production, ownerEmail: owner, perScan: budget.perScan,
+    }),
+  });
   const app = express();
+  app.jobs = jobs;
   app.set('view engine', 'ejs');
   app.set('views', join(ROOT, 'views'));
   app.locals.appName = 'Privacyscan';
@@ -75,11 +95,17 @@ export function createApp({
   app.locals.formatDay = (day) => new Date(`${day}T00:00:00Z`)
     .toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
   app.locals.dataClassLabel = dataClassLabel;
+  app.locals.formatPhone = formatPhone;
+  // Kan de site een code per sms sturen? (Zie sms.js: op een openbare site nog niet.)
+  app.locals.smsAvailable = sms.available;
+  app.locals.codeMinutes = CODE_MINUTES;
   // Voor het rapport van de Deep Scan en het bewijs bij elke bevinding.
   app.locals.describeStep = describeStep;
+  app.locals.jobErrorText = (code) => JOB_ERRORS[code] ?? JOB_ERRORS.unexpected;
   app.locals.confidenceLabel = confidenceLabel;
   app.locals.decisionLabel = decisionLabel;
   app.locals.describeWebResult = describeWebResult;
+  app.locals.viaText = viaText;
   app.locals.evidenceSource = evidenceSource;
   app.locals.phases = PHASES;
   // Voor de privacyverklaring: naar welke dienst gaan de e-mailadressen? (Have I Been Pwned,
@@ -121,7 +147,10 @@ export function createApp({
   }));
   app.use(createScanRoutes({
     db, production, mailer, hibp: guardedCheck, search: guardedSearch, sendConfirmation, resendLimit, scanLimit,
-    ownerEmail: owner, monitor: meter,
+    ownerEmail: owner, monitor: meter, jobs, runJobsInline,
+  }));
+  app.use(createProfileRoutes({
+    db, production, ownerEmail: owner, sms, phoneCodeLimit,
   }));
   app.use('/beheerder', createAdminRoutes({
     db,
@@ -131,6 +160,7 @@ export function createApp({
     search,
     check: hibp,
     mailer,
+    budget,
     limits: {
       loginLimit, accountLimit, registerLimit, resendLimit, scanLimit, checkLimit, testLimit,
     },

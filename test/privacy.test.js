@@ -99,7 +99,13 @@ test('op een openbare site zegt de privacyverklaring dat zoeken op naam uit staa
   assert.doesNotMatch(text, /sturen we je naam/);
   // We vragen dan ook niet om een woonplaats, dus de verklaring noemt die niet.
   assert.doesNotMatch(text, /Je woonplaats/);
-  assert.doesNotMatch(text, /Zoekgegevens/);
+  assert.doesNotMatch(text, /wijzig je je woonplaats/);
+  // En zonder sms-dienst ook niet om een telefoonnummer.
+  assert.doesNotMatch(text, /Je telefoonnummer/);
+  assert.doesNotMatch(text, /sms/);
+  // Zoeken op je e-mailadres kan wel, als je het zelf aanzet.
+  assert.match(text, /Of we ook op het web naar je e-mailadres mogen zoeken/);
+  assert.match(text, /Heb je zoeken op je e-mailadres aangezet, dan sturen we ook je e-mailadres als zoekopdracht/);
 });
 
 test('de geldigheid van de link in de privacyverklaring komt uit dezelfde instelling als de mail', async (t) => {
@@ -108,18 +114,20 @@ test('de geldigheid van de link in de privacyverklaring komt uit dezelfde instel
   assert.match(text, new RegExp(`De link is ${CONFIRM_MINUTES} minuten geldig`));
 });
 
-test('op een openbare site bestaat de pagina met je woonplaats niet', async (t) => {
+test('op een openbare site vragen we niet om je woonplaats', async (t) => {
   const search = fakeSearch({ results: [] });
   const { db, base, mailer } = await startServer(t, { hibp: fakeHibp(), search, production: true });
   const cookie = await registerConfirmed(base, mailer);
 
-  assert.equal((await send(base, '/profiel', { cookie })).status, 404);
+  const profile = await send(base, '/profiel', { cookie });
+  assert.equal(profile.status, 200);
+  assert.doesNotMatch(await profile.text(), /name="woonplaats"/);
   const post = await send(base, '/profiel', { method: 'POST', cookie, fields: { woonplaats: 'Utrecht' } });
   assert.equal(post.status, 404);
   assert.equal(db.prepare('SELECT city FROM users').get().city, null); // er is niets bewaard
 
   const dashboard = await (await send(base, '/dashboard', { cookie })).text();
-  assert.doesNotMatch(dashboard, /href="\/profiel"/);
+  assert.doesNotMatch(dashboard, /Woonplaats (toevoegen|wijzigen)/);
 });
 
 test('op je eigen computer staat de woonplaats-pagina er wel, en de privacyverklaring noemt hem', async (t) => {
@@ -142,7 +150,7 @@ test('de privacyverklaring beschrijft de openbare e-mailcontrole en zegt dat het
     /Het e-mailadres dat je op de startpagina controleert: we bewaren het niet, ook niet in een logboek/,
     /zoekopdrachten en controles van e-mailadressen/,
     /controles van e-mailadressen: maximaal een uur/,
-    /Er is geen zoekvak waarin je een andere naam kunt invullen/,
+    /Er is geen zoekvak waarin je een andere naam kunt invullen, of het telefoonnummer van iemand anders/,
   ]) {
     assert.match(text, onderwerp);
   }
@@ -154,4 +162,33 @@ test('de openbare controle staat ook in de privacyverklaring van een openbare si
   const text = await privacyText(t, { production: true, search: fakeSearch({ isDemo: false }) });
   assert.match(text, /Op de startpagina kan iedereen een e-mailadres controleren/);
   assert.match(text, /Het adres dat je intypt, bewaren we niet/);
+});
+
+test('op je eigen computer noemt de privacyverklaring je telefoonnummer, de sms-code en wat we per databroker bijhouden', async (t) => {
+  const { CODE_MINUTES } = await import('../src/phone-codes.js');
+  const text = await privacyText(t, { search: fakeSearch({ isDemo: false, name: 'Zoekmachine X' }) });
+  for (const onderwerp of [
+    /Je telefoonnummer, als je dat zelf toevoegt en bevestigt/,
+    new RegExp(`De code is ${CODE_MINUTES} minuten geldig en werkt één keer`),
+    /sleutel die alleen in het geheugen van de server staat/,
+    /Pas als je hem invult, bewaren we het nummer/,
+    /Of we ook op het web naar je e-mailadres mogen zoeken, en sinds wanneer\. Dat staat uit, tot jij het aanzet/,
+    /met welk gegeven het gevonden is \(je naam, je telefoonnummer of je e-mailadres\)/,
+    /Per databroker of telefoongids uit ons register bewaren we wanneer we voor het laatst keken/,
+    /gericht bij databrokers en telefoongidsen, op sociale media en in openbare documenten/,
+    /de sites zelf bezoeken we niet/,
+    /Heb je je telefoonnummer bevestigd, dan sturen we bij de Deep Scan ook dat nummer \(in een paar schrijfwijzen\) als zoekopdracht naar Zoekmachine X/,
+    /Er is nog geen sms-dienst gekoppeld\. De sms met de code komt op deze installatie in een testpostvak/,
+    new RegExp(`Een code voor je telefoonnummer: ${CODE_MINUTES} minuten`),
+    /Wat we per databroker bijhouden: zolang je account bestaat/,
+    /verwijder je je telefoonnummer/,
+  ]) {
+    assert.match(text, onderwerp);
+  }
+});
+
+test('bij de demo-zoekdienst gaan ook je telefoonnummer en e-mailadres nergens heen', async (t) => {
+  const text = await privacyText(t, { search: fakeSearch({ isDemo: true }) });
+  assert.doesNotMatch(text, /dan sturen we ook je e-mailadres als zoekopdracht/);
+  assert.doesNotMatch(text, /dan sturen we bij de Deep Scan ook dat nummer/);
 });

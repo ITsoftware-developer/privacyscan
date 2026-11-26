@@ -12,9 +12,15 @@
 // Eén stap die niet lukt, stopt de rest niet. De scanner verzint niets: een stap die niet gelopen
 // is, krijgt nooit de status "voltooid".
 import {
-  STEP_TITLES, exposureFrom, exposureNote, verifyFindings, verifyNote,
+  STEP_DEFS, STEP_TITLES, exposureFrom, exposureNote, verifyFindings, verifyNote,
 } from './engine.js';
-import { lastScan, listFindings, saveRun } from './findings.js';
+import { BROKERS, brokerById } from './brokers/registry.js';
+import { lastScan, listFindings, recordScan, saveRun } from './findings.js';
+import { brokersIn, recordBrokerFindings, scanBrokers } from './research/broker-scan.js';
+import {
+  DOCUMENT_TYPES, SOCIAL_SITES, documentsQuery, emailQuery, phoneQuery, socialQuery,
+} from './research/queries.js';
+import { searchAndSave } from './research/web-research.js';
 import { ScanError } from './scan-error.js';
 import { scanBreaches, scanWeb, searchSourceId } from './scans.js';
 import { WEB_RESULT_MINUTES } from './retention.js';
@@ -36,7 +42,11 @@ const REASONS = {
   no_search: 'Er is geen zoekdienst ingesteld, dus er is niet op het web gezocht. Zet BRAVE_API_KEY in je .env (zie de README). Staat hij er al in? Start de site dan opnieuw: hij leest .env alleen bij het starten.',
   paused: 'De beheerder heeft deze bron tijdelijk uitgezet. Probeer het later nog eens.',
   search_paused: 'De beheerder heeft de zoekdienst tijdelijk uitgezet. Probeer het later nog eens.',
+  search_budget: 'De grens voor zoekopdrachten van de site (per dag of per maand) is bereikt. Er is niets gezocht; het werkt weer als de dag of maand om is.',
+  search_budget_scan: 'De grens van het aantal zoekopdrachten voor één onderzoek is bereikt; de rest is niet gezocht.',
   name_too_short: 'Je naam bevat te weinig letters om op te zoeken.',
+  no_phone: 'Je hebt geen bevestigd telefoonnummer. Voeg je nummer toe bij Zoekgegevens en bevestig het met de code die je krijgt: pas dan onderzoeken we het.',
+  no_email_consent: 'Je hebt niet gekozen om ook op je e-mailadres te zoeken. Dat kan bij Zoekgegevens; dan gaat je e-mailadres als zoekopdracht naar de zoekdienst.',
   search_disabled: 'Zoeken op naam staat uit op een openbare site: een bevestigd e-mailadres bewijst niet dat de naam van jou is.',
 };
 
@@ -46,7 +56,10 @@ const UNREACHABLE = new Set([
   'search_failed', 'search_bad_key', 'search_rate_limited', 'search_unavailable', 'search_unexpected',
 ]);
 // Bij deze fouten hebben we de bron niet eens geprobeerd.
-const NOT_TRIED = new Set(['no_key', 'no_search', 'name_too_short', 'search_disabled', 'paused', 'search_paused']);
+const NOT_TRIED = new Set([
+  'no_key', 'no_search', 'name_too_short', 'search_disabled', 'paused', 'search_paused', 'search_budget', 'search_budget_scan',
+  'no_phone', 'no_email_consent',
+]);
 
 function fromError(error, sources) {
   if (error instanceof ScanError) {
@@ -102,20 +115,170 @@ async function webStep({ db, user, search, allowWeb, now }) {
   }
 }
 
+const plural = (count, one, many) => (count === 1 ? `1 ${one}` : `${count} ${many}`);
+
+// Een webstap van het uitgebreide onderzoek: één zoekopdracht met een van je gegevens. `ready` zegt of
+// de stap mag (anders de foutcode waarom niet). `describe` maakt de tekst bij een gelukte stap.
+async function searchStep({
+  db, user, search, now, ready, query, via, describe, web,
+}) {
+  if (!search) return fromError(new ScanError('no_search'), []);
+  if (ready !== true) return fromError(new ScanError(ready), []);
+  if (!query) return fromError(new ScanError('name_too_short'), []);
+  const sourceId = searchSourceId(search);
+  try {
+    const { results, added } = await searchAndSave({
+      db, user, search, query, via, now,
+    });
+    for (const result of results) web.urls.add(result.url);
+    web.added += added;
+    const brokers = brokersIn(results);
+    const demo = Boolean(search.isDemo);
+    let note = describe(results.length, added);
+    if (brokers.length > 0) note += ` Daarvan op een databrokersite: ${brokers.map((id) => brokerById(id)?.name ?? id).join(', ')}.`;
+    if (demo) note = `Demo: ${plural(results.length, 'verzonnen resultaat', 'verzonnen resultaten')}. Dit is nepdata.`;
+    return {
+      status: 'done', sources: [sourceId], demo, found: results.length, added, note,
+    };
+  } catch (error) {
+    return fromError(error, [sourceId]);
+  }
+}
+
+function foundText(count, added, what) {
+  if (count === 0) return `Niets gevonden ${what}.`;
+  return `${plural(count, 'mogelijke vermelding', 'mogelijke vermeldingen')} ${what}${added > 0 ? `, waarvan ${added} nieuw` : ''}.`;
+}
+
+// De databrokers uit het register (zie brokers/registry.js en research/broker-scan.js).
+async function brokerStep({
+  db, user, search, allowWeb, now, web,
+}) {
+  if (!search) return fromError(new ScanError('no_search'), []);
+  if (!allowWeb) return fromError(new ScanError('search_disabled'), []);
+  const sourceId = searchSourceId(search);
+  const closed = BROKERS.filter((broker) => broker.access === 'closed').map((broker) => broker.name);
+  try {
+    const outcome = await scanBrokers({
+      db, user, search, now,
+    });
+    for (const result of outcome.results) web.urls.add(result.url);
+    web.added += outcome.added;
+    const names = outcome.withHits.map((id) => brokerById(id)?.name ?? id);
+    let note = outcome.found === 0
+      ? `Bij ${plural(outcome.checked, 'databroker', 'databrokers')} niets gevonden op je naam.`
+      : `${plural(outcome.found, 'mogelijke vermelding', 'mogelijke vermeldingen')} op je naam bij ${names.join(', ')}. Een vermelding kan van een naamgenoot zijn: kijk zelf.`;
+    if (outcome.error) note += ` Niet alle databrokers konden worden doorzocht: ${(REASONS[outcome.error.code] ?? REASONS.unexpected).toLowerCase()}`;
+    if (closed.length > 0) note += ` Afgeschermd (niet te doorzoeken): ${closed.join(', ')}.`;
+    if (search.isDemo) note = 'Demo: de nepzoekdienst kent geen databrokers, dus er is niets gevonden. Dit is geen echte controle.';
+    return {
+      status: 'done', sources: [sourceId], demo: Boolean(search.isDemo), found: outcome.found, added: outcome.added, note,
+    };
+  } catch (error) {
+    return fromError(error, [sourceId]);
+  }
+}
+
+const DARKWEB_NOTE = 'Niet beschikbaar: er is geen geautoriseerde aanbieder gekoppeld. We bouwen geen eigen darkweb-crawler en kopen of bewaren geen gestolen gegevens.';
+
+// Combineren: welke resultaten met meer dan één van je gegevens gevonden zijn, en welke een sterke
+// overeenkomst zijn (je bevestigde e-mailadres of telefoonnummer staat erin).
+function combinedNote(web) {
+  const multi = web.filter((item) => Array.isArray(item.details.via) && item.details.via.length > 1).length;
+  const strong = web.filter((item) => item.confidence === 'hoog').length;
+  if (web.length === 0) return '';
+  return ` Combineren: ${plural(multi, 'webresultaat is', 'webresultaten zijn')} met meer dan één van je gegevens gevonden, en ${plural(strong, 'is een sterke overeenkomst', 'zijn een sterke overeenkomst')} (je bevestigde e-mailadres of telefoonnummer staat erin).`;
+}
+
+// De stappen zoals ze op de pagina staan voordat er iets loopt: allemaal "wacht".
+export function plannedSteps() {
+  return STEP_DEFS.map((def) => ({ id: def.id, title: def.title, status: 'pending', sources: [], note: '' }));
+}
+
 // Voert de Deep Scan uit en bewaart het rapport. Geeft { ranAt, steps, exposure } terug. Deze
 // functie gooit geen fouten van de bronnen: die komen als stap in het rapport.
-//   allowWeb  mag er op naam gezocht worden? (Dat bepaalt de aanroeper, zie routes-scan.js.)
-export async function runDeepScan({ db, user, hibp, search, allowWeb, now = Date.now() }) {
+//   allowWeb    mag er op naam gezocht worden? (Dat bepaalt de aanroeper, zie owner.js.)
+//   onProgress  krijgt na elke stap alle stappen: de gedane, de stap die nu loopt en wat nog wacht
+//               (voor de voortgang van de onderzoekswachtrij, zie jobs/).
+export async function runDeepScan({
+  db, user, hibp, search, allowWeb, now = Date.now(), onProgress = () => {},
+}) {
   const steps = [];
-  const add = (id, outcome) => steps.push({ id, title: STEP_TITLES[id], ...outcome });
+  const report = () => onProgress([
+    ...steps,
+    ...STEP_DEFS.slice(steps.length).map((def, index) => ({
+      id: def.id, title: def.title, status: index === 0 ? 'running' : 'pending', sources: [], note: '',
+    })),
+  ]);
+  const add = (id, outcome) => {
+    steps.push({ id, title: STEP_TITLES[id], ...outcome });
+    report();
+  };
+  report();
 
   add('datalekken', await breachStep({ db, user, hibp, now }));
-  add('databrokers', {
-    status: 'planned',
-    sources: [],
-    note: 'Nog niet gebouwd (fase 3). Databrokers onderzoeken we straks alleen via toegestane bronnen.',
-  });
-  add('web', await webStep({ db, user, search, allowWeb, now }));
+
+  // Het webonderzoek: je naam (met woonplaats), databrokers, sociale media, documenten, je bevestigde
+  // telefoonnummer en, als je dat wilt, je e-mailadres. `web` telt de unieke adressen voor de samenvatting.
+  const web = { urls: new Set(), added: 0 };
+  const nameStep = await webStep({ db, user, search, allowWeb, now });
+  if (nameStep.status === 'done') {
+    const latest = lastScan(db, user.id, 'web');
+    if (latest?.ran_at === now) {
+      for (const item of listFindings(db, user.id, now).web) {
+        if (item.checked_at === now) web.urls.add(item.url);
+      }
+      web.added += latest.new_count;
+    }
+  }
+  add('web', nameStep);
+  add('databrokers', await brokerStep({
+    db, user, search, allowWeb, now, web,
+  }));
+  const shared = {
+    db, user, search, now, web,
+  };
+  add('sociale-media', await searchStep({
+    ...shared,
+    ready: allowWeb ? true : 'search_disabled',
+    query: socialQuery(user.name),
+    via: 'naam',
+    describe: (count, added) => foundText(count, added, `op sociale media (${SOCIAL_SITES.join(', ')})`),
+  }));
+  add('documenten', await searchStep({
+    ...shared,
+    ready: allowWeb ? true : 'search_disabled',
+    query: documentsQuery(user.name),
+    via: 'naam',
+    describe: (count, added) => foundText(count, added, `in openbare documenten (${DOCUMENT_TYPES.join(', ')})`),
+  }));
+  add('telefoon', await searchStep({
+    ...shared,
+    ready: user.phone && user.phone_verified_at ? true : 'no_phone',
+    query: phoneQuery(user.phone_verified_at ? user.phone : null),
+    via: 'telefoon',
+    // Het nummer zelf staat niet in de tekst: het rapport blijft bewaard, ook als je het nummer later verwijdert.
+    describe: (count, added) => foundText(count, added, 'met je bevestigde telefoonnummer'),
+  }));
+  add('e-mail', await searchStep({
+    ...shared,
+    ready: user.email_web_at ? true : 'no_email_consent',
+    query: emailQuery(user.email),
+    via: 'e-mail',
+    describe: (count, added) => foundText(count, added, 'met je e-mailadres'),
+  }));
+  add('darkweb', { status: 'unavailable', sources: [], note: DARKWEB_NOTE });
+
+  // Per databroker de unieke pagina's van deze scan, met elk gegeven waarmee ze gevonden zijn.
+  recordBrokerFindings(db, user.id, now);
+
+  // Wat het webonderzoek samen vond, als de laatste webzoekopdracht van dit account.
+  const searched = steps.some((step) => ['web', 'databrokers', 'sociale-media', 'documenten', 'telefoon', 'e-mail'].includes(step.id)
+    && step.status === 'done');
+  if (searched) {
+    const latest = lastScan(db, user.id, 'web');
+    recordScan(db, user.id, 'web', web.urls.size, web.added, latest?.ran_at === now ? latest.detail : null, now);
+  }
 
   // De laatste twee stappen rekenen op wat er nu is opgeslagen, ook van een eerdere scan.
   const findings = listFindings(db, user.id);
@@ -145,7 +308,7 @@ export async function runDeepScan({ db, user, hibp, search, allowWeb, now = Date
   if (everything.length === 0) {
     add('verificatie', { status: 'skipped', sources: [], note: verifyNote(verifyFindings([])) });
   } else {
-    add('verificatie', { status: 'done', sources: [], note: verifyNote(verifyFindings(everything)) });
+    add('verificatie', { status: 'done', sources: [], note: verifyNote(verifyFindings(everything)) + combinedNote(findings.web) });
   }
 
   const run = { ranAt: now, steps, exposure };

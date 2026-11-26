@@ -1,9 +1,9 @@
-<%# Werk deze tekst bij zodra de app meer gegevens verwerkt, bijvoorbeeld bij automatisch opnieuw zoeken (fase 4). %>
+<%# Werk deze tekst bij zodra de app meer gegevens verwerkt, bijvoorbeeld bij automatisch opnieuw zoeken of een sms-dienst. %>
 <%- include('partials/head', { title: 'Privacyverklaring' }) %>
 
 <article class="card prose">
   <h1>Privacyverklaring</h1>
-  <p class="lead">Versie van 25 november 2026</p>
+  <p class="lead">Versie van 26 november 2026</p>
 
   <% if (!contact.name || !contact.email) { %>
     <p class="alert alert-warning" role="note">
@@ -49,6 +49,21 @@
         altijd wijzigen of leegmaken op de pagina "Zoekgegevens".
       </li>
     <% } %>
+    <% if (smsAvailable) { %>
+      <li>
+        <strong>Je telefoonnummer</strong>, als je dat zelf toevoegt en bevestigt. Een bevestigd e-mailadres
+        bewijst niet dat een telefoonnummer van jou is. Daarom sturen we eerst een code van 6 cijfers per sms
+        naar het nummer. In de database staat niet de code zelf, maar een vingerafdruk ervan, gemaakt met een
+        sleutel die alleen in het geheugen van de server staat. De code is <%= codeMinutes %> minuten geldig en
+        werkt één keer. Pas als je hem invult, bewaren we het nummer, met de datum van bevestiging. We gebruiken
+        het alleen om bij de Deep Scan naar je eigen nummer te zoeken. Verwijderen kan altijd, op de pagina
+        "Zoekgegevens" (artikel 6 lid 1 onder b AVG).
+      </li>
+    <% } %>
+    <li>
+      <strong>Of we ook op het web naar je e-mailadres mogen zoeken</strong>, en sinds wanneer. Dat staat
+      uit, tot jij het aanzet op de pagina "Zoekgegevens". Uitzetten kan daar ook.
+    </li>
     <li>
       <strong>Wat de zoekopdrachten vinden en wat jij daarvan vindt.</strong> Dat
       zijn de datalekken waarin jouw e-mailadres voorkomt (de naam van het lek,
@@ -56,7 +71,11 @@
       (titel, adres en een korte tekst), jouw keuze per webresultaat ("Dit ben
       ik", "Dit ben ik niet" of "Weet ik niet") en wanneer je voor het laatst
       gezocht hebt. Bij elke bevinding bewaren we uit welke bron hij komt, wanneer
-      we hem onderzochten en hoe zeker het is dat hij over jou gaat.
+      we hem onderzochten en hoe zeker het is dat hij over jou gaat. Bij een webresultaat
+      bewaren we ook met welk gegeven het gevonden is (je naam, je telefoonnummer of je
+      e-mailadres) en wat voor site het is. Per databroker of telefoongids uit ons register
+      bewaren we wanneer we voor het laatst keken, of dat lukte, hoeveel mogelijke vermeldingen
+      er waren en met welk gegeven.
       <% if (searchPolicy.configured && !searchPolicy.isDemo && !searchPolicy.retains) { %>
         <strong>De webresultaten zelf bewaren we maar <%= searchPolicy.keepMinutes %> minuten</strong>,
         omdat <%= searchPolicy.name %> niet toestaat dat we ze bewaren. Van jouw keuze per webresultaat
@@ -89,8 +108,12 @@
   <p>
     Met een account zoeken we alleen naar <strong>jezelf</strong>: in datalekken op het
     e-mailadres van je account, en op het web op de naam van je account (en je woonplaats,
-    als je die hebt ingevuld). Er is geen zoekvak waarin je een andere naam kunt invullen,
-    en dat is bewust zo.
+    als je die hebt ingevuld). Bij de Deep Scan zoeken we op je naam ook gericht bij
+    databrokers en telefoongidsen, op sociale media en in openbare documenten (zoals pdf- en
+    Word-bestanden). Dat gaat allemaal via de zoekdienst: de sites zelf bezoeken we niet.
+    <% if (smsAvailable) { %>Heb je je telefoonnummer met een code bevestigd, dan zoeken we ook op dat nummer.<% } %>
+    Heb je het zelf aangezet, dan zoeken we ook op je e-mailadres. Er is geen zoekvak waarin je
+    een andere naam kunt invullen, of het telefoonnummer van iemand anders: dat is bewust zo.
   </p>
   <p>
     Op de startpagina kan <strong>iedereen een e-mailadres controleren</strong>, ook zonder
@@ -176,6 +199,20 @@
     <% } else { %>
       <li>Je naam gaat niet naar een zoekdienst, want zoeken op naam staat uit.</li>
     <% } %>
+    <% if (searchPolicy.configured && !searchPolicy.isDemo) { %>
+      <li>
+        <% if (smsAvailable) { %>Heb je je telefoonnummer bevestigd, dan sturen we bij de Deep Scan ook
+        <strong>dat nummer</strong> (in een paar schrijfwijzen) als zoekopdracht naar <%= searchPolicy.name %>. <% } %>Heb je
+        zoeken op je e-mailadres aangezet, dan sturen we ook <strong>je e-mailadres</strong> als zoekopdracht
+        naar <%= searchPolicy.name %>. Doe je dat niet, dan gaat je e-mailadres niet naar de zoekdienst.
+      </li>
+    <% } %>
+    <% if (smsAvailable) { %>
+      <li>
+        Er is nog geen sms-dienst gekoppeld. De sms met de code komt op deze installatie in een testpostvak
+        en gaat niet naar buiten.
+      </li>
+    <% } %>
     <li>
       Voor de bevestigingsmail gebruiken we een e-maildienst. Die ontvangt je
       e-mailadres, je naam en de link in de mail, om de mail te kunnen bezorgen.
@@ -202,6 +239,15 @@
       Verwijder je je account via je dashboard, dan wissen we alles meteen.
     </li>
     <li>Bevestigingslinks: <%= confirmMinutes %> minuten, of tot je ze gebruikt hebt.</li>
+    <% if (smsAvailable) { %>
+      <li>
+        Je telefoonnummer: tot je het verwijdert op de pagina "Zoekgegevens", of je account verwijdert. Een code
+        voor je telefoonnummer: <%= codeMinutes %> minuten, of tot je hem gebruikt hebt.
+      </li>
+    <% } %>
+    <li>
+      Wat we per databroker bijhouden: zolang je account bestaat. Bij elke Deep Scan wordt het bijgewerkt.
+    </li>
     <li>Sessies: maximaal 7 dagen, of korter als je uitlogt.</li>
     <li>
       Tellers van aanmeldingen, inlogpogingen, nieuwe mails, zoekopdrachten en controles van
@@ -222,8 +268,9 @@
     De beheerder van deze site (zie bovenaan) heeft een beheerpagina om de site te laten werken en
     misbruik tegen te gaan. Daar staat per account: het nummer, het e-mailadres, wanneer het account
     is gemaakt, of het adres bevestigd is, wanneer er voor het laatst gezocht is en hoeveel resultaten
-    dat gaf, en of het account geblokkeerd is. Je naam, je woonplaats, je zoekopdrachten en wat er over
-    jou gevonden is, staan er niet op.
+    dat gaf, en of het account geblokkeerd is. Je naam, je woonplaats, je telefoonnummer, je zoekopdrachten
+    en wat er over jou gevonden is, staan er niet op. Over de databrokers staan er alleen totalen: bij hoeveel
+    accounts er gekeken is en of dat lukte, niet bij wie er iets gevonden is.
   </p>
   <p>
     Verder houdt de site een technisch logboek bij, bijvoorbeeld "Brave Search antwoordde met HTTP 429"
@@ -238,8 +285,9 @@
   <p>
     Je mag je gegevens inzien, laten corrigeren of laten verwijderen. Je mag
     bezwaar maken tegen het gebruik ervan en je gegevens meenemen naar een
-    andere dienst. Je account verwijderen kan zelf, via je dashboard<% if (searchPolicy.allowed) { %>,
-    en je woonplaats wijzig je zelf op de pagina "Zoekgegevens"<% } %>. Voor de rest mail je naar
+    andere dienst. Je account verwijderen kan zelf, via je dashboard. Op de pagina "Zoekgegevens" zet je
+    zoeken op je e-mailadres zelf aan of uit<% if (smsAvailable) { %>, en verwijder je je telefoonnummer<% } %><% if (searchPolicy.allowed) { %>,
+    en wijzig je je woonplaats<% } %>. Voor de rest mail je naar
     <strong><%= contact.email || '[jouw e-mailadres]' %></strong>;
     je krijgt binnen een maand antwoord.
   </p>

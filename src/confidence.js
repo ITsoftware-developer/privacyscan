@@ -10,6 +10,8 @@
 // onderzocht) en een zekerheid. De app verzint geen bevindingen en geen bronnen.
 
 // Voor datalekken.
+import { containsPhone } from './phone.js';
+
 export const CONFIDENCE_LABELS = {
   hoog: 'Hoog',
   gemiddeld: 'Gemiddeld',
@@ -18,7 +20,7 @@ export const CONFIDENCE_LABELS = {
   demo: 'Demo (verzonnen)',
 };
 
-// Voor webresultaten: een overeenkomst met jouw naam, geen bewijs.
+// Voor webresultaten: een overeenkomst met jouw gegevens (naam, e-mailadres, telefoonnummer), geen bewijs.
 export const MATCH_LABELS = {
   hoog: 'Sterke overeenkomst',
   gemiddeld: 'Mogelijke overeenkomst',
@@ -84,14 +86,17 @@ function containsAddress(text, email) {
 
 // Beoordeelt een webresultaat aan de hand van alleen de titel en het fragment dat de
 // zoekdienst teruggaf (de pagina zelf lezen we niet). Het blijft een MOGELIJKE overeenkomst:
-//   hoog       je bevestigde e-mailadres staat letterlijk in de titel of het fragment
+//   hoog       je bevestigde e-mailadres staat letterlijk in de titel of het fragment, of je
+//              telefoonnummer dat je met een sms-code bevestigd hebt
 //   gemiddeld  je volledige naam én je woonplaats staan erin (een naamgenoot in dezelfde plaats
 //              kan dat ook zijn)
 //   laag       je volledige naam staat erin zonder woonplaats, of alleen de losse delen ervan
 //   geen       je naam staat er niet in
 // Een naam, ook met woonplaats, is nooit genoeg voor "hoog": daarvoor is een gegeven nodig dat we
-// van jou hebben bevestigd, en dat is alleen je e-mailadres.
-export function rateWebResult({ name, city = null, email = null, title = '', snippet = '' }) {
+// van jou hebben bevestigd, en dat zijn alleen je e-mailadres en je bevestigde telefoonnummer.
+export function rateWebResult({
+  name, city = null, email = null, phone = null, title = '', snippet = '',
+}) {
   const text = ` ${fold(`${title} ${snippet}`)} `;
   // Hele woorden: "Utrecht" komt niet voor in "Utrechtseweg".
   const hasPhrase = (phrase) => phrase !== '' && text.includes(` ${phrase} `);
@@ -100,6 +105,13 @@ export function rateWebResult({ name, city = null, email = null, title = '', sni
     return {
       level: 'hoog',
       note: 'Je bevestigde e-mailadres staat letterlijk in de titel of het fragment. Dat is een sterke aanwijzing, geen bewijs: kijk zelf op de pagina.',
+    };
+  }
+  // Alleen een nummer dat je met een sms-code hebt bevestigd (de aanroeper geeft geen ander mee).
+  if (containsPhone(`${title} ${snippet}`, phone)) {
+    return {
+      level: 'hoog',
+      note: 'Je bevestigde telefoonnummer staat in de titel of het fragment. Dat is een sterke aanwijzing, geen bewijs: een nummer kan eerder van iemand anders zijn geweest. Kijk zelf op de pagina.',
     };
   }
 

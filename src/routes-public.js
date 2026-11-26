@@ -117,6 +117,7 @@ export function createPublicRoutes({ db, hibp, search = null, checkLimit, monito
         emailSources: hibp.emailSources ?? ['hibp'],
         hasKey: Boolean(hibp.hasKey),
         search,
+        sms: Boolean(req.app.locals.smsAvailable),
       }),
       phases: PHASES,
       wide: true,

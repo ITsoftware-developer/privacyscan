@@ -8,11 +8,19 @@ import { BREACH_CONFIDENCE } from './confidence.js';
 
 export const STEP_DEFS = [
   { id: 'datalekken', title: 'Datalekdatabases onderzoeken' },
-  { id: 'databrokers', title: 'Databrokers controleren' },
   { id: 'web', title: 'Openbare internetbronnen onderzoeken' },
+  { id: 'databrokers', title: 'Databrokers controleren' },
+  { id: 'sociale-media', title: 'Sociale media onderzoeken' },
+  { id: 'documenten', title: 'Openbare documenten zoeken' },
+  { id: 'telefoon', title: 'Telefoonnummer onderzoeken' },
+  { id: 'e-mail', title: 'E-mailadres op het web zoeken' },
+  { id: 'darkweb', title: 'Darkwebbronnen' },
   { id: 'blootstelling', title: 'Mogelijke blootstelling beoordelen' },
-  { id: 'verificatie', title: 'Bewijs controleren' },
+  { id: 'verificatie', title: 'Bewijs controleren en combineren' },
 ];
+
+// De stappen die de openbare startpagina laat zien (zie publicPlan en publicRun hieronder).
+export const PUBLIC_STEPS = ['datalekken', 'databrokers', 'web', 'blootstelling', 'verificatie'];
 
 export const STEP_TITLES = Object.fromEntries(STEP_DEFS.map((step) => [step.id, step.title]));
 
@@ -26,6 +34,9 @@ export const STATUSES = {
   skipped: { tone: 'warn', label: 'Overgeslagen' },         // mag of kan nu niet, bijvoorbeeld door een regel
   unavailable: { tone: 'warn', label: 'Niet beschikbaar' }, // er is geen bron ingesteld
   planned: { tone: 'idle', label: 'Nog niet gebouwd' },
+  // Terwijl de Deep Scan op de achtergrond loopt (zie jobs/)
+  pending: { tone: 'idle', label: 'Wacht' },
+  running: { tone: 'warn', label: 'Bezig' },
   // Alleen voor de startpagina, voordat er iets gedaan is
   available: { tone: 'ok', label: 'Beschikbaar' },
   testmode: { tone: 'warn', label: 'Testmodus' },
@@ -169,8 +180,8 @@ export function publicPlan({ testMode = false } = {}) {
       status: testMode ? 'testmode' : 'available',
       note: testMode ? 'Alleen testadressen: zie de melding hierboven.' : 'Bekende datalekken, gratis en zonder account.',
     },
-    { id: 'databrokers', status: 'planned', note: 'Komt in fase 3, alleen via toegestane bronnen.' },
-    { id: 'web', status: 'account', note: 'Alleen op je eigen naam, in je account.' },
+    { id: 'databrokers', status: 'account', note: 'In je account: gericht zoeken bij bekende databrokers, op je eigen naam.' },
+    { id: 'web', status: 'account', note: 'Alleen op je eigen gegevens, in je account.' },
     { id: 'blootstelling', status: 'after', note: 'Welke soorten gegevens bevatten de lekken?' },
     { id: 'verificatie', status: 'after', note: 'Heeft elke bevinding een bron, een datum en een beoordeling?' },
   ].map(withTitle);
@@ -202,8 +213,8 @@ export function publicRun({ breaches, source }) {
         ? `Geen datalek gevonden bij ${source.name}.`
         : `${breaches.length === 1 ? '1 datalek' : `${breaches.length} datalekken`} gevonden bij ${source.name}.`,
     },
-    { id: 'databrokers', status: 'planned', note: 'Nog niet gebouwd (fase 3).' },
-    { id: 'web', status: 'skipped', note: 'Niet onderzocht: dat kan alleen in je eigen account, op je eigen naam.' },
+    { id: 'databrokers', status: 'skipped', note: 'Niet onderzocht: dat kan alleen in je eigen account, op je eigen naam.' },
+    { id: 'web', status: 'skipped', note: 'Niet onderzocht: dat kan alleen in je eigen account, op je eigen gegevens.' },
     { id: 'blootstelling', status: 'done', note: exposureNote(exposure, breaches.length) },
     {
       id: 'verificatie',

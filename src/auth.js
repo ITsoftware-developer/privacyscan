@@ -54,7 +54,7 @@ export function findSessionUser(db, token) {
   if (!token) return null;
   const user = db.prepare(`
     SELECT users.id, users.name, users.email, users.created_at,
-           users.email_confirmed_at, users.city
+           users.email_confirmed_at, users.city, users.phone, users.phone_verified_at, users.email_web_at
     FROM sessions JOIN users ON users.id = sessions.user_id
     WHERE sessions.id = ? AND sessions.expires_at > ? AND users.blocked_at IS NULL
   `).get(hashToken(token), Date.now());
@@ -82,6 +82,16 @@ export function loadUser(db) {
 export function requireLogin(req, res, next) {
   if (!req.user) return res.redirect(303, '/inloggen');
   next();
+}
+
+// Zoeken mag pas als je e-mailadres bevestigd is: dan weten we dat er echt iemand
+// achter dit adres zit.
+export function requireConfirmed(req, res, next) {
+  if (req.user.email_confirmed_at) return next();
+  res.status(403).render('fout', {
+    title: 'Bevestig eerst je e-mailadres',
+    message: 'Zolang je e-mailadres niet bevestigd is, zoeken we niets voor je op. Klik op de link in de bevestigingsmail, of vraag op je dashboard een nieuwe aan.',
+  });
 }
 
 // Bescherming tegen CSRF: een andere website mag geen formulier naar onze site

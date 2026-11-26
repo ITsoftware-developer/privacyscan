@@ -18,7 +18,11 @@ export const ANNA = {
 export async function startServer(t, options = {}) {
   const db = options.db ?? openDatabase(':memory:');
   const mailer = options.mailer ?? createMailer();
-  const app = createApp({ pwnedCheck: async () => false, search: createDemoSearch(), ...options, mailer, db });
+  // runJobsInline: een Deep Scan loopt in de tests meteen, zodat ze geen timers nodig hebben. De tests van
+  // de wachtrij zelf zetten dit uit en roepen jobs.drain() aan.
+  const app = createApp({
+    pwnedCheck: async () => false, search: createDemoSearch(), runJobsInline: true, ...options, mailer, db,
+  });
   const server = await new Promise((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
   });
@@ -27,7 +31,9 @@ export async function startServer(t, options = {}) {
     return new Promise((resolve) => server.close(resolve));
   };
   t.after(close);
-  return { db, mailer, close, base: `http://127.0.0.1:${server.address().port}` };
+  return {
+    db, mailer, close, jobs: app.jobs, base: `http://127.0.0.1:${server.address().port}`,
+  };
 }
 
 // Doet een verzoek zoals een browser dat zou doen. Bij een formulier sturen

@@ -224,9 +224,9 @@ test('je woonplaats opslaan, wijzigen en leegmaken', async (t) => {
 
   const saved = await save('  Utrecht ');
   assert.equal(saved.status, 303);
-  assert.equal(saved.headers.get('location'), '/dashboard?opgeslagen');
+  assert.equal(saved.headers.get('location'), '/profiel?opgeslagen#woonplaats');
   assert.equal(city(), 'Utrecht');
-  assert.match(await (await send(base, '/dashboard?opgeslagen', { cookie })).text(), /Je woonplaats is opgeslagen/);
+  assert.match(await (await send(base, '/profiel?opgeslagen', { cookie })).text(), /Je woonplaats is opgeslagen/);
   assert.match(await (await send(base, '/profiel', { cookie })).text(), /value="Utrecht"/);
 
   for (const name of ["'s-Hertogenbosch", 'Bergen op Zoom', 'Sint-Oedenrode', 'Zoë-stad', 'St. Anna']) {

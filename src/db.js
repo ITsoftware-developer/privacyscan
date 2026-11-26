@@ -118,6 +118,48 @@ export function openDatabase(path) {
     );
     CREATE INDEX IF NOT EXISTS system_events_at ON system_events (at);
 
+    -- De onderzoekswachtrij (zie jobs/queue.js): een Deep Scan loopt op de achtergrond, zodat je de
+    -- pagina mag sluiten. Per stap de voortgang, als JSON (dezelfde stappen als in het rapport).
+    -- ON DELETE CASCADE: verwijdert iemand zijn account, dan verdwijnen zijn onderzoeken mee.
+    CREATE TABLE IF NOT EXISTS jobs (
+      id           INTEGER PRIMARY KEY,
+      user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind         TEXT    NOT NULL CHECK (kind IN ('deep')),
+      status       TEXT    NOT NULL CHECK (status IN ('queued', 'running', 'done', 'failed')),
+      steps        TEXT    NOT NULL DEFAULT '[]',
+      error        TEXT,                     -- een vaste code als het onderzoek mislukte, nooit een melding
+      attempts     INTEGER NOT NULL DEFAULT 0,
+      created_at   INTEGER NOT NULL,
+      started_at   INTEGER,
+      heartbeat_at INTEGER,
+      finished_at  INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS jobs_status ON jobs (status, created_at);
+    CREATE INDEX IF NOT EXISTS jobs_user ON jobs (user_id, created_at);
+
+    -- De code waarmee je je telefoonnummer bevestigt (zie routes-profile.js). Alleen de hash van de
+    -- code, nooit de code zelf; hij is 10 minuten geldig en je hebt 5 pogingen.
+    CREATE TABLE IF NOT EXISTS phone_codes (
+      user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      phone      TEXT    NOT NULL,
+      code_hash  TEXT    NOT NULL,
+      attempts   INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    );
+
+    -- De Data Broker Engine: per account en per databroker wanneer we voor het laatst keken, of dat
+    -- lukte en hoeveel mogelijke vermeldingen er waren. Geen resultaten zelf: die staan (kort) in findings.
+    CREATE TABLE IF NOT EXISTS broker_checks (
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      broker_id  TEXT    NOT NULL,
+      status     TEXT    NOT NULL CHECK (status IN ('gevonden', 'niet-gevonden', 'niet-toegankelijk', 'overgeslagen')),
+      found      INTEGER NOT NULL DEFAULT 0,
+      via        TEXT    NOT NULL DEFAULT '',   -- met welke gegevens gevonden: naam, telefoon, e-mail
+      checked_at INTEGER NOT NULL,
+      PRIMARY KEY (user_id, broker_id)
+    );
+
     -- Instellingen die de beheerder op de beheerpagina verandert, zoals een bron pauzeren. Sleutels
     -- en wachtwoorden staan hier nooit: die blijven in .env.
     CREATE TABLE IF NOT EXISTS settings (
@@ -132,6 +174,12 @@ export function openDatabase(path) {
   addColumn(db, 'users', 'city', 'TEXT');
   // Geblokkeerd door de beheerder (bij misbruik). Leeg = niet geblokkeerd.
   addColumn(db, 'users', 'blocked_at', 'INTEGER');
+  // Je telefoonnummer (internationaal, +31612345678), en wanneer je het met een sms-code bevestigde.
+  // Alleen een bevestigd nummer wordt onderzocht.
+  addColumn(db, 'users', 'phone', 'TEXT');
+  addColumn(db, 'users', 'phone_verified_at', 'INTEGER');
+  // Wanneer je toestemming gaf om ook op je e-mailadres op het web te zoeken. Leeg = nee.
+  addColumn(db, 'users', 'email_web_at', 'INTEGER');
 
   // Bij elke bevinding: uit welke bron, hoe zeker, en wanneer het voor het laatst is onderzocht
   // (anders dan updated_at, dat ook verandert als jij een keuze maakt).
@@ -187,14 +235,18 @@ export function removeExpired(db, now = Date.now()) {
   db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(now);
   db.prepare('DELETE FROM email_confirmations WHERE expires_at <= ?').run(now);
   db.prepare('DELETE FROM rate_limits WHERE reset_at <= ?').run(now);
+  db.prepare('DELETE FROM phone_codes WHERE expires_at <= ?').run(now);
   db.prepare('DELETE FROM findings WHERE expires_at IS NOT NULL AND expires_at <= ?').run(now);
   pruneEvents(db, now);
+  db.prepare("DELETE FROM jobs WHERE status IN ('done', 'failed') AND finished_at <= ?").run(now - JOB_DAYS * 24 * 60 * 60 * 1000);
   db.prepare('DELETE FROM api_usage WHERE day < ?')
     .run(new Date(now - USAGE_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
 }
 
 // Hoe lang de tellers van het verbruik blijven: ruim een jaar, om maanden te kunnen vergelijken.
 export const USAGE_DAYS = 400;
+// Hoe lang een afgerond onderzoek in de wachtrij blijft staan (het rapport zelf staat in scan_runs).
+export const JOB_DAYS = 30;
 
 // Wist alles wat de demo-zoekdienst verzonnen heeft: de nepresultaten, de keuzes die je daarbij
 // maakte, de laatste webzoekopdracht en een Deep Scan-rapport waar demo-resultaten in staan.

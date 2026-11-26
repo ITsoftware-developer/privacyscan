@@ -235,7 +235,7 @@ test('Brave: de resultatenpagina toont mogelijke overeenkomsten, gemaskeerde geg
   assert.match(text, /Het is een gok op basis van het uiterlijk\. Of het van jou is, bepaal jij\./);
   // Een mogelijke overeenkomst, geen zekerheid; en alles nog te beoordelen.
   assert.match(text, /Mogelijke overeenkomst|Sterke overeenkomst|Zwakke overeenkomst/);
-  assert.match(text, /Dit zijn mogelijke vermeldingen van je naam, geen bewijs dat ze over jou gaan/);
+  assert.match(text, /Dit zijn mogelijke vermeldingen van jou, geen bewijs dat ze over jou gaan/);
   assert.match(text, /Nog te beoordelen: 4/);
   // De bewaartermijn staat er, en er is niets van een demo.
   assert.match(text, /De zoekdienst staat niet toe dat we resultaten bewaren\. Deze resultaten blijven zichtbaar tot uiterlijk \d{2}:\d{2}/);

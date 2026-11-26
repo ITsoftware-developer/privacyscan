@@ -48,9 +48,11 @@ test('zonder instellingen staat alleen wat echt werkt op "actief"', () => {
   assert.equal(stateOf(register, 'search'), 'niet-ingesteld');
   assert.match(entry(register, 'search').note, /niet op het web gezocht en er wordt niets verzonnen/);
   assert.match(entry(register, 'search').note, /BRAVE_API_KEY/);
-  for (const id of ['databrokers', 'social', 'documenten', 'darkweb']) {
-    assert.equal(stateOf(register, id), 'gepland', id);
+  // Databrokers, sociale media en documenten gaan via de zoekdienst: zonder zoekdienst gebeurt er niets.
+  for (const id of ['databrokers', 'social', 'documenten']) {
+    assert.equal(stateOf(register, id), 'niet-ingesteld', id);
   }
+  assert.equal(stateOf(register, 'darkweb'), 'gepland');
 });
 
 test('met een HIBP-sleutel is HIBP actief, met de gratis dienst is XposedOrNot actief', () => {
@@ -85,16 +87,17 @@ test('bij een echte zoekdienst staat er waar de zoekopdracht heen gaat en hoe la
   assert.doesNotMatch(metRechten, /30 minuten/);
 });
 
-test('met een echte zoekdienst markeren we sociale media en documenten, maar zoeken we er nog niet apart', () => {
+test('met een echte zoekdienst zoeken we apart bij databrokers, op sociale media en naar documenten', () => {
   const echt = describeRegister({ search: { isDemo: false, name: 'brave', label: 'Brave Search' } });
-  for (const id of ['social', 'documenten']) {
-    assert.equal(stateOf(echt, id), 'gepland', id);
-    assert.match(entry(echt, id).note, /markeren we in de resultaten/);
-    assert.match(entry(echt, id).note, /nog niet gebouwd/);
+  for (const id of ['databrokers', 'social', 'documenten']) {
+    assert.equal(stateOf(echt, id), 'actief', id);
+    assert.match(entry(echt, id).note, /In de Deep Scan/, id);
   }
-  // Bij de demo of zonder zoekdienst is er niets om te markeren.
-  for (const search of [null, { isDemo: true }]) {
-    assert.doesNotMatch(entry(describeRegister({ search }), 'social').note, /markeren/);
+  assert.match(entry(echt, 'databrokers').note, /bij 14 bekende databrokers en telefoongidsen/);
+  assert.match(entry(echt, 'databrokers').note, /We openen hun sites niet/);
+  // Bij de demo wordt er niet echt gezocht, en dat staat er.
+  for (const id of ['databrokers', 'social', 'documenten']) {
+    assert.equal(stateOf(describeRegister({ search: { isDemo: true } }), id), 'demo', id);
   }
 });
 
@@ -102,10 +105,8 @@ test('wat nog niet bestaat, wordt nooit "actief", wat er ook is ingesteld', () =
   const alles = describeRegister({
     emailSources: ['hibp', 'xon'], hasKey: true, search: { isDemo: false, name: 'echt' },
   });
-  for (const id of ['databrokers', 'social', 'documenten', 'darkweb']) {
-    assert.equal(stateOf(alles, id), 'gepland', id);
-    assert.ok(entry(alles, id).note, `${id}: er staat wat er nodig is`);
-  }
+  assert.equal(stateOf(alles, 'darkweb'), 'gepland');
+  assert.ok(entry(alles, 'darkweb').note, 'er staat wat er nodig is');
   // Voor het darkweb staat er bovendien dat we het niet zelf doen.
   assert.match(entry(alles, 'darkweb').note, /geen eigen crawler/);
 });
@@ -113,7 +114,7 @@ test('wat nog niet bestaat, wordt nooit "actief", wat er ook is ingesteld', () =
 test('elk onderdeel van het register heeft een naam, een categorie, een uitleg en een stand in tekst', () => {
   const register = describeRegister({ emailSources: ['xon'], hasKey: true, search: { isDemo: true } });
   assert.deepEqual(register.map((item) => item.id), [
-    'hibp', 'xon', 'pwned-passwords', 'search', 'databrokers', 'social', 'documenten', 'darkweb',
+    'hibp', 'xon', 'pwned-passwords', 'search', 'databrokers', 'social', 'documenten', 'telefoon', 'email-web', 'darkweb',
   ]);
   for (const item of register) {
     assert.ok(item.name && item.gives, item.id);
@@ -123,9 +124,9 @@ test('elk onderdeel van het register heeft een naam, een categorie, een uitleg e
   }
 });
 
-test('de roadmap heeft zes fases, en alleen fase 1 en 2 staan op klaar', () => {
+test('de roadmap heeft zes fases, en fase 1, 2 en 3 staan op klaar', () => {
   assert.deepEqual(PHASES.map((phase) => phase.number), [1, 2, 3, 4, 5, 6]);
-  assert.deepEqual(PHASES.filter((phase) => phase.done).map((phase) => phase.number), [1, 2]);
+  assert.deepEqual(PHASES.filter((phase) => phase.done).map((phase) => phase.number), [1, 2, 3]);
   assert.deepEqual(PHASES.map((phase) => phase.name), [
     'Veilig fundament', 'Breach Intelligence Engine', 'Data Broker Engine',
     'Deep Research Engine', 'Eigen AI-agent', 'Continuous Monitoring',
@@ -140,4 +141,18 @@ test('de roadmap belooft nergens iets te verwijderen', () => {
   for (const item of describeRegister()) {
     assert.doesNotMatch(`${item.gives} ${item.note ?? ''}`, /verwijder/i, item.id);
   }
+});
+
+test('je telefoonnummer staat in het register als niet ingesteld zolang er geen sms-dienst is', () => {
+  const search = { isDemo: false, name: 'echt' };
+  const without = describeRegister({ search, sms: false });
+  assert.equal(stateOf(without, 'telefoon'), 'niet-ingesteld');
+  assert.match(entry(without, 'telefoon').note, /geen sms-dienst/);
+  const withSms = describeRegister({ search, sms: true });
+  assert.equal(stateOf(withSms, 'telefoon'), 'actief');
+  assert.match(entry(withSms, 'telefoon').note, /alleen als je het met een sms-code hebt bevestigd/);
+  // Zonder zoekdienst helpt een sms-dienst niets.
+  assert.equal(stateOf(describeRegister({ search: null, sms: true }), 'telefoon'), 'niet-ingesteld');
+  assert.equal(stateOf(describeRegister({ search, sms: true }), 'email-web'), 'actief');
+  assert.match(entry(describeRegister({ search }), 'email-web').note, /alleen als je dat zelf aanzet/);
 });

@@ -10,6 +10,7 @@ import { openDatabase } from '../src/db.js';
 import { listEvents } from '../src/events.js';
 import { createHibp } from '../src/hibp.js';
 import { createMonitor } from '../src/monitor.js';
+import { createSmsSender } from '../src/sms.js';
 import { NEUTRAL_QUERY } from '../src/probes.js';
 import { createBraveSearch } from '../src/search.js';
 import { createXon } from '../src/xon.js';
@@ -139,19 +140,52 @@ test('de beheerpagina toont alle onderdelen, maar geen namen, woonplaatsen, zoek
   assert.ok(db.prepare("SELECT detail FROM scans WHERE kind = 'web'").get().detail.includes('Anna')); // de zoekopdracht bestaat wel
 
   const text = await textOf(await get(base, '/beheerder', owner));
-  for (const id of ['status', 'bronnen', 'verbruik', 'onderzoeken', 'log', 'accounts', 'instellingen', 'nog-niet']) {
+  for (const id of ['status', 'bronnen', 'verbruik', 'onderzoeken', 'databrokers', 'log', 'accounts', 'instellingen', 'nog-niet']) {
     assert.match(text, new RegExp(`id="${id}"`), id);
   }
   // Wel: de accounts (met e-mailadres), tellers en het log.
   assert.match(text, /anna@example\.com/);
   assert.match(text, /Webzoekopdracht: 2 gevonden, 2 nieuw/);
-  assert.match(text, /Deep Scan: \d van 5 stappen voltooid/);
+  assert.match(text, /Deep Scan: \d+ van 10 stappen voltooid/);
   assert.match(text, /Jij \(beheerder\)/);
   assert.match(text, /Nog niet gebouwd/);
   assert.match(text, /Er is nog geen AI-model gekoppeld/);
   // Niet: wat er over Anna gevonden is, haar naam, woonplaats of zoekopdracht.
   for (const secret of ['Anna de Vries', 'Utrecht', CLUB.url, GIDS.url, CLUB.title, GIDS.snippet, 'clubkampioenschappen']) {
     assert.ok(!text.includes(secret), `"${secret}" staat op de beheerpagina`);
+  }
+});
+
+test('de Data Broker Engine op de beheerpagina: het register en of zoeken werkte, geen treffers en geen telefoonnummers', async (t) => {
+  const listing = { title: 'Anna de Vries - Telefoonboek', url: 'https://www.telefoonboek.nl/anna-de-vries', snippet: 'Anna de Vries, bel 06-12345678' };
+  const search = fakeSearch({
+    results: (request) => {
+      if (request.query.includes('site:spokeo.com')) throw Object.assign(new Error('storing'), { code: 'unavailable' });
+      return request.query.includes('site:telefoonboek.nl') || request.query.includes('0612345678') ? [listing] : [];
+    },
+  });
+  const sms = createSmsSender();
+  const { base, db, owner, anna } = await site(t, { search, sms });
+  await post(base, '/profiel/telefoon', anna, { telefoon: '06 12345678' });
+  await post(base, '/profiel/telefoon/bevestigen', anna, { code: sms.outbox[0].text.match(/\b(\d{6})\b/)[1] });
+  assert.equal(db.prepare('SELECT phone FROM users WHERE id = 2').get().phone, '+31612345678');
+  await post(base, '/scan/deep', anna);
+  assert.equal(db.prepare("SELECT status FROM broker_checks WHERE broker_id = 'telefoonboek'").get().status, 'gevonden');
+
+  const html = await textOf(await get(base, '/beheerder', owner));
+  const section = html.slice(html.indexOf('id="databrokers"'), html.indexOf('id="log"'));
+  assert.match(section, /15 databrokers en telefoongidsen in het register,\s+nagekeken op 26 november 2026/);
+  assert.match(section, /Afgeschermd, en dus niet doorzocht: Pipl\./);
+  assert.match(section, /2 zoekopdrachten per Deep Scan/);
+  const row = (name) => section.slice(section.indexOf(`>${name}</a>`), section.indexOf('</tr>', section.indexOf(`>${name}</a>`)));
+  // Telefoonboek.nl: één account gecontroleerd. Of daar iets gevonden is, staat er niet.
+  assert.match(row('Telefoonboek.nl'), /<td class="num">1<\/td>\s*<td class="num">0<\/td>\s*<td class="num">0<\/td>/);
+  // Spokeo: de zoekdienst gaf een fout, dat telt als niet toegankelijk.
+  assert.match(row('Spokeo'), /<td class="num">1<\/td>\s*<td class="num">1<\/td>\s*<td class="num">0<\/td>/);
+  assert.doesNotMatch(section, /Mogelijke vermelding|gevonden/i);
+  assert.match(section, /Daarnaast herkent de site \d+ personenzoeksites in gewone zoekresultaten/);
+  for (const secret of [listing.url, listing.title, '06 12345678', '06-12345678', '+31612345678', '0612345678', 'Anna de Vries']) {
+    assert.ok(!html.includes(secret), `"${secret}" staat op de beheerpagina`);
   }
 });
 
@@ -433,7 +467,8 @@ test('de privacyverklaring zegt wat de beheerder ziet', async (t) => {
   const { base } = await startServer(t);
   const text = await textOf(await get(base, '/privacy'));
   assert.match(text, /<h2>Wat de beheerder ziet<\/h2>/);
-  assert.match(text, /Je naam, je woonplaats, je zoekopdrachten en wat er over\s+jou gevonden is, staan er niet op/);
+  assert.match(text, /Je naam, je woonplaats, je telefoonnummer, je zoekopdrachten\s+en wat er over jou gevonden is, staan er niet op/);
+  assert.match(text, /Over de databrokers staan er alleen totalen: bij hoeveel\s+accounts er gekeken is en of dat lukte, niet bij wie er iets gevonden is/);
   assert.match(text, /Het technische logboek van de site: maximaal 30 dagen/);
 });
 

@@ -47,6 +47,16 @@ export const CODE_TEXT = {
   search_unexpected: 'onverwacht antwoord van de zoekdienst',
   search_disabled: 'zoeken op naam staat uit',
   search_paused: 'zoekdienst gepauzeerd door de beheerder',
+  search_budget: 'grens voor zoekopdrachten (per dag of maand) bereikt',
+  search_budget_scan: 'grens van zoekopdrachten per onderzoek bereikt',
+};
+
+// Waarom een onderzoek op de achtergrond mislukte (zie jobs/worker.js).
+export const JOB_ERRORS = {
+  unexpected: 'onverwachte fout (de details staan in de terminal)',
+  interrupted: 'te vaak onderbroken door een herstart van de server',
+  account_unavailable: 'het account bestaat niet meer, is geblokkeerd of niet bevestigd',
+  unknown_kind: 'onbekende soort onderzoek',
 };
 
 const account = (d) => (d.account === undefined ? 'een account' : `account #${d.account}`);
@@ -92,6 +102,15 @@ export const EVENTS = {
   account_unblocked: { level: 'info', text: (d) => `De beheerder heeft ${account(d)} gedeblokkeerd.` },
   blocked_login: { level: 'warn', text: (d) => `Een geblokkeerd account (${account(d)}) probeerde in te loggen.` },
   admin_login: { level: 'info', text: () => 'De beheerder is ingelogd.' },
+  budget_reached: {
+    level: 'warn',
+    text: (d) => `Kostengrens bereikt: ${serviceName(d.service)} krijgt ${d.period === 'month' ? 'deze maand' : 'vandaag'} geen aanvragen meer van de site.`,
+  },
+  job_failed: { level: 'warn', text: (d) => `Een onderzoek op de achtergrond mislukte: ${JOB_ERRORS[d.job] ?? JOB_ERRORS.unexpected}.` },
+  jobs_requeued: {
+    level: 'warn',
+    text: (d) => `Na een herstart: ${d.count ?? 0} onderzoek(en) opnieuw in de wachtrij gezet${d.failed ? `, ${d.failed} te vaak onderbroken en gestopt` : ''}.`,
+  },
   limit_reached: { level: 'warn', text: (d) => `Limiet van de site bereikt bij ${LIMITS[d.what] ?? 'een verzoek'}.` },
   unexpected_error: {
     level: 'error',
@@ -122,6 +141,10 @@ const DETAILS = {
   purged: count,
   limited: count,
   account: count,
+  count,
+  failed: count,
+  period: oneOf(['day', 'month']),
+  job: (value) => (Object.hasOwn(JOB_ERRORS, value) ? value : 'unexpected'),
 };
 
 export function cleanDetail(detail = {}) {

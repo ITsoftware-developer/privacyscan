@@ -1,6 +1,7 @@
 // Start de webserver. Gebruik: npm start (of npm run dev tijdens het bouwen).
 import { join } from 'node:path';
 import { createApp } from './app.js';
+import { DEFAULT_LIMITS, parseLimit } from './budget.js';
 import { createBreachCheck, parseFreeBreachCheck } from './breach-check.js';
 import { openDatabase, removeExpired } from './db.js';
 import { logEvent } from './events.js';
@@ -94,6 +95,18 @@ try {
   stopWith(error.message);
 }
 
+// Kostenlimieten voor de zoekdienst (zie budget.js). Leeg = de standaardwaarden.
+let budget;
+try {
+  budget = {
+    perDay: parseLimit(process.env.BRAVE_MAX_PER_DAY, 'BRAVE_MAX_PER_DAY', DEFAULT_LIMITS.perDay),
+    perMonth: parseLimit(process.env.BRAVE_MAX_PER_MONTH, 'BRAVE_MAX_PER_MONTH', DEFAULT_LIMITS.perMonth),
+    perScan: parseLimit(process.env.MAX_QUERIES_PER_SCAN, 'MAX_QUERIES_PER_SCAN', DEFAULT_LIMITS.perScan),
+  };
+} catch (error) {
+  stopWith(error.message);
+}
+
 // De beheerder: komt op de beheerpagina (/beheerder), en mag op een openbare site als enige op naam zoeken.
 let ownerEmail;
 try {
@@ -107,9 +120,12 @@ const fetchPwned = monitor.fetchFor('pwned-passwords');
 const pwnedCheck = (password) => isPwned(password, { fetchFn: fetchPwned });
 
 const app = createApp({
-  db, production, contact, mailer, baseUrl, hibp, search, ownerEmail, monitor, pwnedCheck,
+  db, production, contact, mailer, baseUrl, hibp, search, ownerEmail, monitor, pwnedCheck, budget,
 });
 logEvent(db, 'server_started', { mode: production ? 'production' : 'development' });
+// De werker van de onderzoekswachtrij: een Deep Scan loopt op de achtergrond. Wat bij de vorige keer
+// nog liep, gaat eerst terug in de wachtrij.
+app.jobs.start();
 
 // Bij het starten: verzonnen demo-resultaten wissen als er een andere zoekdienst is, resultaten
 // die niet mogen blijven een einddatum geven, en wat verlopen is meteen wissen (zie housekeeping.js).
@@ -145,6 +161,7 @@ app.listen(port, host, (error) => {
     }
   } else {
     console.log(`Zoekdienst: ${search.label}. Je naam en woonplaats gaan als zoekopdracht naar deze dienst. ${search.retainsResults ? 'Resultaten worden bewaard (BRAVE_STORAGE_RIGHTS=on).' : `Resultaten blijven maximaal ${WEB_RESULT_MINUTES} minuten bewaard.`}`);
+    console.log(`Kostenlimieten: hooguit ${budget.perDay} zoekopdrachten per dag, ${budget.perMonth} per maand en ${budget.perScan} per Deep Scan.`);
   }
   if (hasHibpKey) {
     console.log('Datalekken: via Have I Been Pwned, met je eigen sleutel.');

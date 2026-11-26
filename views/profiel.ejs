@@ -1,13 +1,18 @@
 <%- include('partials/head', { title: 'Zoekgegevens' }) %>
+<%
+  const verified = Boolean(user.phone && user.phone_verified_at);
+  const errorAt = (name) => error && section === name;
+%>
 
 <section class="card form-card">
   <h1>Zoekgegevens</h1>
   <p class="lead">
-    Hiermee zoeken we op jouw eigen gegevens. Er is bewust geen zoekvak voor andere mensen.
+    Hiermee zoeken we op jouw eigen gegevens. Er is bewust geen zoekvak voor andere mensen: we
+    onderzoeken alleen gegevens waarvan vaststaat dat ze van jou zijn.
   </p>
 
-  <% if (error) { %>
-    <p class="alert alert-error" role="alert"><%= error %></p>
+  <% if (notice) { %>
+    <p class="alert alert-ok" role="status"><%= notice %></p>
   <% } %>
 
   <dl class="facts">
@@ -16,14 +21,111 @@
   </dl>
   <p class="hint">Naam en e-mailadres komen uit je account. Je naam kun je in deze versie nog niet wijzigen.</p>
 
-  <form method="post" action="/profiel">
-    <label for="woonplaats">Woonplaats (optioneel)</label>
-    <input id="woonplaats" name="woonplaats" autocomplete="address-level2" maxlength="60" value="<%= value %>">
-    <p class="hint">
-      Helpt om mensen met dezelfde naam weg te filteren. Laat je dit leeg, dan zoeken we alleen op je naam.
+  <div class="profile-part" id="telefoon">
+    <h2>Telefoonnummer</h2>
+    <% if (errorAt('telefoon') || errorAt('code')) { %>
+      <p class="alert alert-error" role="alert"><%= error %></p>
+    <% } %>
+
+    <% if (verified) { %>
+      <dl class="facts">
+        <dt>Nummer</dt><dd><%= formatPhone(user.phone) %> <span class="badge badge-ok">Bevestigd</span></dd>
+        <dt>Sinds</dt><dd><%= formatDateTime(user.phone_verified_at) %></dd>
+      </dl>
+      <p class="hint">
+        Bij de Deep Scan zoeken we op dit nummer, in alle gangbare schrijfwijzen: op het web, in
+        telefoongidsen en bij databrokers.
+      </p>
+      <form method="post" action="/profiel/telefoon/verwijderen">
+        <button type="submit" class="button button-quiet profile-button">Nummer verwijderen</button>
+      </form>
+    <% } else if (!pending) { %>
+      <p class="card-text">
+        Nog geen nummer. Een bevestigd e-mailadres bewijst niet dat een telefoonnummer van jou is. Daarom
+        sturen we eerst een code naar het nummer: pas als je die invult, onderzoeken we het.
+      </p>
+    <% } %>
+
+    <% if (pending) { %>
+      <p class="card-text">
+        We hebben een code gestuurd naar <strong><%= formatPhone(pending.phone) %></strong>. Hij is geldig
+        tot <%= new Date(pending.expiresAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }) %>.
+        <% if (devSms) { %>
+          Je draait de site op je eigen computer, dus de sms staat in het <a href="/dev/sms">testpostvak</a>.
+        <% } %>
+      </p>
+      <form method="post" action="/profiel/telefoon/bevestigen">
+        <label for="code">Code uit de sms (<%= codeDigits %> cijfers)</label>
+        <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="9" required>
+        <button type="submit" class="button button-primary">Bevestigen</button>
+      </form>
+      <form method="post" action="/profiel/telefoon/annuleren">
+        <button type="submit" class="button button-quiet profile-button">Typfout in het nummer? Annuleren</button>
+      </form>
+    <% } else if (!smsAvailable) { %>
+      <p class="alert alert-warning card-alert" role="note">
+        Bevestigen per sms kan op deze site nog niet: er is nog geen sms-dienst gekoppeld. Daarom
+        onderzoeken we hier nog geen telefoonnummers.
+      </p>
+    <% } else if (!user.email_confirmed_at) { %>
+      <p class="hint">Bevestig eerst je e-mailadres. Daarna kun je hier een nummer toevoegen.</p>
+    <% } else { %>
+      <form method="post" action="/profiel/telefoon">
+        <label for="telefoon"><%= verified ? 'Ander nummer' : 'Je telefoonnummer' %></label>
+        <input id="telefoon" name="telefoon" type="tel" autocomplete="tel" maxlength="30" value="<%= phoneValue %>">
+        <p class="hint">
+          Bijvoorbeeld 06 12345678, of met landcode (+32 …). We sturen een code van <%= codeDigits %> cijfers,
+          die <%= codeMinutes %> minuten geldig is.
+        </p>
+        <button type="submit" class="button button-primary">Stuur code</button>
+      </form>
+    <% } %>
+  </div>
+
+  <div class="profile-part" id="e-mail">
+    <h2>Zoeken op je e-mailadres</h2>
+    <% if (errorAt('e-mail')) { %>
+      <p class="alert alert-error" role="alert"><%= error %></p>
+    <% } %>
+    <p class="card-text">
+      In datalekken zoeken we altijd op je e-mailadres. Wil je dat we bij de Deep Scan ook op het web zoeken
+      naar pagina's waar je adres letterlijk op staat? Dan gaat je e-mailadres als zoekopdracht naar
+      <% if (searchPolicy.configured && !searchPolicy.isDemo) { %>de zoekdienst <%= searchPolicy.name %><% } else { %>de zoekdienst<% } %>.
+      Dat doen we alleen als je dat hier aanzet.
     </p>
-    <button type="submit" class="button button-primary">Opslaan</button>
-  </form>
+    <% if (!user.email_confirmed_at) { %>
+      <p class="hint">Bevestig eerst je e-mailadres.</p>
+    <% } else if (user.email_web_at) { %>
+      <p class="card-text profile-status"><span class="badge badge-ok">Aan</span> sinds <%= formatDateTime(user.email_web_at) %>.</p>
+      <form method="post" action="/profiel/e-mail-zoeken">
+        <input type="hidden" name="keuze" value="uit">
+        <button type="submit" class="button button-quiet profile-button">Zet uit</button>
+      </form>
+    <% } else { %>
+      <p class="card-text profile-status"><span class="badge">Uit</span></p>
+      <form method="post" action="/profiel/e-mail-zoeken">
+        <input type="hidden" name="keuze" value="aan">
+        <button type="submit" class="button button-action">Zet aan</button>
+      </form>
+    <% } %>
+  </div>
+
+  <% if (canUseName) { %>
+    <div class="profile-part" id="woonplaats">
+      <h2>Woonplaats</h2>
+      <% if (errorAt('woonplaats')) { %>
+        <p class="alert alert-error" role="alert"><%= error %></p>
+      <% } %>
+      <form method="post" action="/profiel">
+        <label for="woonplaats">Woonplaats (optioneel)</label>
+        <input id="woonplaats" name="woonplaats" autocomplete="address-level2" maxlength="60" value="<%= cityValue %>">
+        <p class="hint">
+          Helpt om mensen met dezelfde naam weg te filteren. Laat je dit leeg, dan zoeken we alleen op je naam.
+        </p>
+        <button type="submit" class="button button-primary">Opslaan</button>
+      </form>
+    </div>
+  <% } %>
 
   <p class="switch"><a href="/dashboard">Terug naar je dashboard</a></p>
 </section>

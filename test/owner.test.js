@@ -135,7 +135,9 @@ test('een account met het adres van de beheerder dat niet bevestigd is, mag niet
   assert.match(await response.text(), /Bevestig eerst je e-mailadres/);
   assert.deepEqual(search.calls, []);
 
-  assert.equal((await send(base, '/profiel', { cookie })).status, 404);
+  // De pagina met zoekgegevens is er wel, maar zonder woonplaats: die vragen we alleen aan wie op naam mag zoeken.
+  const profile = await page(base, cookie, '/profiel');
+  assert.doesNotMatch(profile, /name="woonplaats"/);
 
   // Het dashboard nodigt uit om te bevestigen en zegt niet dat zoeken uit staat.
   const dashboard = await page(base, cookie, '/dashboard');
@@ -170,7 +172,7 @@ test('zonder beheerder mag op een openbare site niemand op naam zoeken', async (
 
     assert.equal((await scan(base, cookie)).status, 403);
     assert.deepEqual(search.calls, []);
-    assert.equal((await send(base, '/profiel', { cookie })).status, 404);
+    assert.doesNotMatch(await page(base, cookie, '/profiel'), /name="woonplaats"/);
   }
 });
 
@@ -183,7 +185,7 @@ test('op je eigen computer maakt OWNER_EMAIL niets uit: wie erbij kan, mag zoeke
 
   assert.equal((await scan(base, cookie)).status, 303);
   assert.equal(search.calls.length, 1);
-  assert.equal((await send(base, '/profiel', { cookie })).status, 200);
+  assert.match(await page(base, cookie, '/profiel'), /name="woonplaats"/);
   // Op je eigen computer is er geen beheerder-uitleg nodig.
   assert.doesNotMatch(await page(base, cookie, '/dashboard'), /Je bent de beheerder/);
 });
@@ -199,18 +201,21 @@ test('ook de beheerder heeft een limiet op het aantal zoekopdrachten', async (t)
 
 // --- De woonplaats-pagina en het dashboard ----------------------------------------------
 
-test('de woonplaats-pagina bestaat alleen voor de beheerder', async (t) => {
+test('alleen de beheerder kan een woonplaats invullen', async (t) => {
   const { db, base, mailer } = await online(t);
   const anna = await registerConfirmed(base, mailer);
   const bram = await registerConfirmed(base, mailer, BRAM);
   const city = (email) => db.prepare('SELECT city FROM users WHERE email = ?').get(email).city;
 
-  assert.equal((await send(base, '/profiel', { cookie: anna })).status, 200);
+  assert.match(await page(base, anna, '/profiel'), /name="woonplaats"/);
   const saved = await send(base, '/profiel', { method: 'POST', cookie: anna, fields: { woonplaats: 'Utrecht' } });
   assert.equal(saved.status, 303);
   assert.equal(city(ANNA.email), 'Utrecht');
 
-  assert.equal((await send(base, '/profiel', { cookie: bram })).status, 404);
+  // Bram ziet de pagina met zoekgegevens wel, maar zonder woonplaats, en het formulier bestaat voor hem niet.
+  const other = await page(base, bram, '/profiel');
+  assert.match(other, /Zoekgegevens/);
+  assert.doesNotMatch(other, /name="woonplaats"/);
   const refused = await send(base, '/profiel', { method: 'POST', cookie: bram, fields: { woonplaats: 'Rotterdam' } });
   assert.equal(refused.status, 404);
   assert.equal(city(BRAM.email), null); // er is niets bewaard
@@ -236,13 +241,15 @@ test('het dashboard: de beheerder ziet de zoekknop en uitleg, anderen zien dat h
   const owner = await page(base, anna, '/dashboard');
   assert.match(owner, /action="\/scan\/web"/);
   assert.match(owner, /Je bent de beheerder van deze site\. Alleen jij mag hier op naam zoeken, zonder identiteitscheck\./);
-  assert.match(owner, /href="\/profiel"/);
+  assert.match(owner, /<a href="\/profiel">Woonplaats toevoegen<\/a>/);
 
   const other = await page(base, bram, '/dashboard');
   assert.doesNotMatch(other, /action="\/scan\/web"/);
   assert.match(other, /Zoeken op je naam staat uit op een openbare site/);
   assert.doesNotMatch(other, /Je bent de beheerder/);
-  assert.doesNotMatch(other, /href="\/profiel"/);
+  assert.doesNotMatch(other, /Woonplaats (toevoegen|wijzigen)/);
+  // Zijn zoekgegevens (telefoonnummer, e-mailadres) kan hij wel beheren.
+  assert.match(other, /<a href="\/profiel">Zoekgegevens beheren<\/a>/);
 });
 
 // --- De privacyverklaring ---------------------------------------------------------------

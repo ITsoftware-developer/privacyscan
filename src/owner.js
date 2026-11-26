@@ -27,3 +27,10 @@ export function hasOwnerAddress(user, ownerEmail) {
 export function isOwner(user, ownerEmail) {
   return hasOwnerAddress(user, ownerEmail) && Boolean(user.email_confirmed_at);
 }
+
+// Mag dit account op zijn eigen naam (en straks telefoonnummer) laten zoeken? Op je eigen computer wel:
+// dat ben jij. Op een openbare site alleen de beheerder, want een bevestigd e-mailadres bewijst niet
+// dat een naam van dezelfde persoon is (zie scans.js).
+export function canSearchByName(user, { production = false, ownerEmail = null } = {}) {
+  return !production || isOwner(user, ownerEmail);
+}

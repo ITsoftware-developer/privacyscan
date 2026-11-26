@@ -5,6 +5,8 @@
 // gevonden is, zijn naam, woonplaats en zoekopdrachten komen er niet op: die heeft de beheerder
 // niet nodig om de site te laten werken.
 import { SESSION_DAYS } from './auth.js';
+import { BROKERS, CHECKED as BROKERS_CHECKED, brokerForUrl, searchGroups } from './brokers/registry.js';
+import { DEFAULT_LIMITS, budgetState } from './budget.js';
 import { CONFIRM_MINUTES } from './confirm.js';
 import { canPause, pausedSince } from './controls.js';
 import { inTransaction } from './db.js';
@@ -165,18 +167,22 @@ const STATES = {
   testmodus: { label: 'Alleen testadressen', tone: 'warn' },
   uit: { label: 'Uit', tone: 'idle' },
   demo: { label: 'Demo (nepdata)', tone: 'warn' },
+  grens: { label: 'Kostengrens bereikt', tone: 'warn' },
 };
 
 // De externe bronnen, met hun toestand, hun laatste aanvraag, hun laatste test en de knoppen die
 // erbij horen. `search` en `check` zijn de koppelingen zelf (zonder pauzeknop ervoor).
-export function sourceRows({ db, search, check, live }) {
+export function sourceRows({
+  db, search, check, live, budget = DEFAULT_LIMITS, now = Date.now(),
+}) {
   const searchId = searchServiceId(search);
   const xon = check?.adapters?.xon ?? null;
   const hibp = check?.adapters?.hibp ?? null;
   const rows = [];
   const add = (row) => {
     const paused = canPause(row.id) && row.configured ? pausedSince(db, row.id) : null;
-    const state = paused !== null ? 'gepauzeerd' : row.state;
+    let state = paused !== null ? 'gepauzeerd' : row.state;
+    if (state === 'actief' && row.id === searchId && budgetState(db, row.id, budget, now).reached) state = 'grens';
     rows.push({
       ...row,
       state,
@@ -250,7 +256,9 @@ export function sourceRows({ db, search, check, live }) {
 }
 
 // Het verbruik per dienst, met voor Brave de limieten die Brave zelf meegaf en een schatting van de kosten.
-export function usageOverview({ usage, live }) {
+export function usageOverview({
+  usage, live, db, budget = DEFAULT_LIMITS, now = Date.now(),
+}) {
   const services = Object.entries(usage.services).map(([id, counts]) => ({ id, name: SERVICES[id].name, ...counts }));
   const brave = usage.services.brave;
   const successful = brave.month.calls - brave.month.errors;
@@ -265,6 +273,8 @@ export function usageOverview({ usage, live }) {
       price: BRAVE_PRICE,
       limits: live.brave?.limits ?? null,
       limitsAt: live.brave?.limitsAt ?? null,
+      budget: budgetState(db, 'brave', budget, now),
+      perScan: budget.perScan,
     },
   };
 }
@@ -273,7 +283,9 @@ const seconds = (ms) => `${(ms / 1000).toLocaleString('nl-NL', { maximumFraction
 
 // De instellingen die nu gelden, met hun waarde. Ze staan in de code en in .env; deze pagina laat ze
 // alleen zien.
-export function scannerSettings({ limits, search, check }) {
+export function scannerSettings({
+  limits, search, check, budget = DEFAULT_LIMITS,
+}) {
   const rows = [
     ['Zoeken per account', `${limits.scanLimit} keer per uur in datalekken en ${limits.scanLimit} keer per uur op het web. De Deep Scan telt voor allebei.`],
     ['Openbare e-mailcontrole', `${limits.checkLimit} controles per uur per IP-adres.`],
@@ -282,6 +294,7 @@ export function scannerSettings({ limits, search, check }) {
     ['Nieuwe bevestigingsmail', `${limits.resendLimit} per uur per account. Een link is ${CONFIRM_MINUTES} minuten geldig.`],
     ['Ingelogd blijven', `${SESSION_DAYS} dagen.`],
     ['Testknoppen op deze pagina', `${limits.testLimit} tests per uur.`],
+    ['Kostenlimieten zoekdienst', `Hooguit ${budget.perDay} zoekopdrachten per dag, ${budget.perMonth} per maand en ${budget.perScan} per Deep Scan (BRAVE_MAX_PER_DAY, BRAVE_MAX_PER_MONTH en MAX_QUERIES_PER_SCAN in .env). Bereikt: geen aanvragen meer tot de dag of maand om is.`],
   ];
   const braveSettings = searchServiceId(search) === 'brave' ? search.settings : null;
   if (braveSettings) {
@@ -304,16 +317,48 @@ export function scannerSettings({ limits, search, check }) {
   return rows.map(([label, value]) => ({ label, value }));
 }
 
+// --- Data Broker Engine -------------------------------------------------------------------------------
+
+// Het register met per databroker alleen technische totalen: bij hoeveel accounts de laatste controle in
+// de afgelopen 30 dagen viel, hoe vaak de zoekdienst niet bereikbaar was of een grens bereikt was, en
+// wanneer er voor het laatst gekeken is. Niet wie er gevonden is, en ook niet hoe vaak: dat is van de
+// gebruikers zelf.
+export function brokerEngineOverview(db, now = Date.now()) {
+  const since = now - 30 * DAY;
+  const stats = new Map(db.prepare(`
+    SELECT broker_id,
+           COUNT(*) AS checked,
+           COALESCE(SUM(status = 'niet-toegankelijk'), 0) AS failed,
+           COALESCE(SUM(status = 'overgeslagen'), 0) AS skipped,
+           MAX(checked_at) AS last
+    FROM broker_checks WHERE checked_at >= ? GROUP BY broker_id`).all(since).map((row) => [row.broker_id, row]));
+  const rows = BROKERS.map((broker) => {
+    const row = stats.get(broker.id);
+    return {
+      broker,
+      checked: row?.checked ?? 0,
+      failed: row?.failed ?? 0,
+      skipped: row?.skipped ?? 0,
+      last: row?.last ?? null,
+    };
+  });
+  return {
+    checkedOn: BROKERS_CHECKED,
+    rows,
+    searchable: BROKERS.filter((broker) => broker.access === 'search').length,
+    closed: BROKERS.filter((broker) => broker.access === 'closed'),
+    queriesPerScan: searchGroups().length,
+    // Personenzoeksites die de site herkent in gewone zoekresultaten, maar waar we niet gericht zoeken.
+    recognized: PEOPLE_SEARCH.filter((domain) => !brokerForUrl(`https://${domain}/`)),
+  };
+}
+
 // Wat er nog niet is. Liever eerlijk op de pagina dan een knop die niets doet.
 export function notBuilt() {
   return [
     { name: 'AI-engine', text: 'Er is nog geen AI-model gekoppeld. Er is dus ook geen AI-activiteit en geen AI-verbruik om te tonen.' },
-    {
-      name: 'Data Broker Engine',
-      text: `Er is nog geen eigen onderzoek bij databrokers. Wel herkent de site ${PEOPLE_SEARCH.length} bekende personenzoeksites en telefoongidsen in de gewone zoekresultaten.`,
-      sites: [...PEOPLE_SEARCH],
-    },
-    { name: 'Onderzoek op de achtergrond', text: 'Een onderzoek loopt nu zolang het verzoek van de bezoeker duurt. Een wachtrij met voortgang per stap komt nog; dan zie je hier ook wat er wacht.' },
+    { name: 'Darkweb', text: 'Er is geen geautoriseerde aanbieder gekoppeld. De Deep Scan zegt dat eerlijk; een eigen darkweb-crawler bouwen we niet.' },
+    { name: 'Sms-dienst', text: 'Er is nog geen sms-dienst gekoppeld. Op je eigen computer komen de codes in het testpostvak (/dev/sms); op een openbare site kan niemand een telefoonnummer bevestigen, en onderzoeken we dus geen telefoonnummers.' },
     { name: 'Pagina’s zelf onderzoeken', text: 'De scanner leest nu alleen de titel, het fragment en het adres dat de zoekdienst teruggeeft. Hij opent de pagina zelf niet.' },
     { name: 'Automatisch opnieuw scannen', text: 'Komt in de fase Monitoring.' },
     { name: 'Tweestapsverificatie', text: 'Inloggen als beheerder kan nu met alleen je e-mailadres en wachtwoord. Zet de site niet openbaar voordat tweestapsverificatie er is.' },

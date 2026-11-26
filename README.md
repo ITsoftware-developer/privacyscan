@@ -1,7 +1,9 @@
 # Privacyscan: wat weet het internet over jou?
 
 Privacyscan **zoekt persoonsgegevens op, toont ze en zegt waar het ze vond**: in bekende datalekken, op het
-web (met een zoekdienst, nu Brave Search) en straks ook bij databrokers en in openbare documenten. De app
+web (met een zoekdienst, nu Brave Search), bij databrokers en telefoongidsen, op sociale media en in openbare
+documenten. Altijd alleen naar jezelf: je eigen naam, je bevestigde e-mailadres en je met een code bevestigde
+telefoonnummer. De app
 **verwijdert niets van het internet** en **stuurt geen verwijderverzoeken**. Dat is een bewuste keuze en
 geen ontbrekende functie: Privacyscan vindt en laat zien, wat je daarna doet bepaal je zelf.
 
@@ -15,7 +17,56 @@ geen ontbrekende functie: Privacyscan vindt en laat zien, wat je daarna doet bep
 > soort gegeven in een datalek zat (bijvoorbeeld telefoonnummers) betekent niet dat jouw nummer eruit
 > gelekt is: niet elk slachtoffer van een lek verloor elke soort gegeven.
 
-## Wat is er nieuw in 0.7.0? De beheerpagina
+## Wat is er nieuw in 0.8.0? Databrokers, uitgebreid onderzoek en een wachtrij
+
+Deze versie volgt de prioriteiten uit je wensenlijst. Zo staat het ervoor:
+
+| Wens (prioriteit) | Stand |
+|---|---|
+| Data Broker Engine (zeer hoog) | **Gebouwd.** Een register van 15 databrokers en telefoongidsen (Nederland, Duitsland, het Verenigd Koninkrijk, de VS en Pipl wereldwijd), met per bedrijf welke gegevens het volgens eigen opgave verwerkt, in welke landen, hoe wij het mogen onderzoeken en de bron waarmee dat is nagekeken. Per account zie je per databroker of er iets gevonden is, wanneer er gekeken is en of dat lukte. |
+| Onderzoek naar je eigen telefoonnummer (zeer hoog) | **Gebouwd**, met een sms-code: pas als je de code invult, onderzoeken we het nummer. Online is er nog geen sms-dienst, dus daar kan het nog niet (zie hieronder). |
+| Uitgebreid onderzoek naar je naam en e-mailadres (zeer hoog) | **Gebouwd.** Op je naam: databrokers, sociale media en openbare documenten (pdf, Word, Excel). Op je e-mailadres: alleen als je dat zelf aanzet, want dan gaat het adres naar de zoekdienst. |
+| Permanente onderzoekswachtrij (zeer hoog) | **Gebouwd.** De Deep Scan loopt op de achtergrond, met voortgang per stap. |
+| Bewijs- en identiteitsverificatie (zeer hoog) | **Gebouwd voor wat te bewijzen is:** je e-mailadres met een link, je telefoonnummer met een sms-code. Bij elk webresultaat staat met welk gegeven het gevonden is, en een resultaat met je bevestigde e-mailadres of telefoonnummer erin heet een *sterke overeenkomst*. Voor je naam is er nog geen identiteitscheck (zoals iDIN): online zoekt daarom alleen de beheerder op naam. |
+| Automatische kostenlimieten (hoog) | **Gebouwd.** Een grens per dag, per maand en per Deep Scan. |
+| Eigen AI-agent (zeer hoog) | **Nog niet.** Daarvoor moet eerst gekozen worden welke AI-dienst hij gebruikt (zie "Volgende stappen"). |
+| Design (geen) | Niet aangeraakt. |
+
+**De Deep Scan heeft nu tien stappen:** datalekken, je naam op het web, databrokers, sociale media, documenten,
+je telefoonnummer, je e-mailadres, darkweb, blootstelling beoordelen, en bewijs controleren en combineren. Een stap
+die niet mag of kan, staat er met de reden. Het darkweb staat als *Niet beschikbaar*: er is geen geautoriseerde
+aanbieder, en een eigen darkweb-crawler bouwen we niet.
+
+**De wachtrij.** De knop zet je Deep Scan in een wachtrij; de server werkt die op de achtergrond af, één onderzoek
+tegelijk en per account hooguit één. De resultatenpagina laat zien hoe ver hij is en ververst zichzelf, en je mag
+hem sluiten. Valt de server uit terwijl er iets loopt, dan zet hij het onderzoek bij het starten opnieuw in de
+wachtrij (hooguit drie keer). Op de beheerpagina zie je wat er wacht, loopt en mislukte.
+
+**De kostenlimieten.** Elke zoekopdracht kost bij Brave geld ($5 per 1.000). Standaard zoekt de site hooguit 100 keer
+per dag en 900 keer per maand (binnen het gratis maandtegoed van $5), en hooguit 25 keer per Deep Scan. Een Deep Scan
+gebruikt er nu 5: je naam, twee groepjes databrokers (Europa en de VS), sociale media en documenten. Met een
+bevestigd telefoonnummer en zoeken op je e-mailadres komen er 2 bij. Is een grens bereikt, dan zoekt de site niet
+meer tot de dag of maand om is, en dat staat op de pagina's en op de beheerpagina. Instellen kan met
+`BRAVE_MAX_PER_DAY`, `BRAVE_MAX_PER_MONTH` en `MAX_QUERIES_PER_SCAN`.
+
+**Zoekgegevens (`/profiel`).** Daar voeg je je telefoonnummer toe: we sturen een code van 6 cijfers, die 10 minuten
+geldig is en die je hooguit 5 keer fout mag invullen. Op je eigen computer komt de sms in een testpostvak
+(`/dev/sms`). Er gaan hooguit 3 codes per uur per account, en 3 per uur naar hetzelfde nummer. Daar zet je ook
+zoeken op je e-mailadres aan of uit, en (als je op naam mag zoeken) je woonplaats.
+
+**Hoe we bij databrokers zoeken.** Via de zoekdienst, met zoekoperatoren die de Brave Search API ondersteunt, zoals
+`"Anna de Vries" site:detelefoongids.nl OR site:telefoonboek.nl OR …`. We openen de sites van de databrokers niet,
+gebruiken hun eigen zoekfunctie niet en lezen hun pagina's niet uit. "Gevonden" betekent: de zoekdienst kent op die
+site een pagina met je volledige naam (of je bevestigde telefoonnummer of e-mailadres). Bij een naam kan dat een
+naamgenoot zijn. Een afgeschermde databroker (Pipl, die alleen via een betaalde API aan bedrijven levert) staat er
+eerlijk bij als *Afgeschermd*: wat zo'n bedrijf over je heeft, weet je alleen met een inzageverzoek (AVG artikel 15)
+of via een geautoriseerde gegevensdienst.
+
+**Wat er nog niet is.** Een sms-dienst voor een openbare site, de AI-agent, de gevonden pagina's zelf lezen, een
+identiteitscheck voor je naam, darkwebbronnen, automatisch opnieuw scannen en tweestapsverificatie voor de
+beheerder.
+
+## Wat was er nieuw in 0.7.0? De beheerpagina
 
 Op `/beheerder` staat een technisch controlecentrum, alleen voor jou als beheerder. Je ziet er wat de site doet,
 welke bronnen hij gebruikt, waar het vastloopt en hoeveel aanvragen het kost:
@@ -29,7 +80,7 @@ welke bronnen hij gebruikt, waar het vastloopt en hoeveel aanvragen het kost:
 | Systeemlog | Storingen van bronnen, scans met aantallen en duur, onverwachte fouten, en wat jij als beheerder deed. Zonder persoonsgegevens, en hooguit 30 dagen. |
 | Accounts | De aantallen, en per account het e-mailadres, de datums en de status. **Blokkeren** bij misbruik: inloggen kan dan niet meer, en een open sessie stopt meteen. Deblokkeren maakt het ongedaan. |
 | Scannerinstellingen | De limieten en instellingen die nu gelden. Alleen om te zien: ze staan in de code en in `.env`. |
-| Nog niet gebouwd | De AI-engine, de Data Broker Engine, onderzoek op de achtergrond, pagina's zelf onderzoeken, automatisch opnieuw scannen en tweestapsverificatie. |
+| Nog niet gebouwd | De AI-engine, darkwebbronnen, een sms-dienst, pagina's zelf onderzoeken, automatisch opnieuw scannen en tweestapsverificatie. |
 
 **Zo kom je erop.** Zet in je `.env` de regel `OWNER_EMAIL=` met je eigen e-mailadres en start de site opnieuw.
 Log in met het account met dat adres (het moet bevestigd zijn): je komt dan meteen op de beheerpagina. Vanaf je
@@ -42,11 +93,9 @@ systeemlog bevat alleen vaste meldingen met getallen en vaste woorden (zie `even
 e-mailadres, naam, zoekopdracht, webadres of sleutel in komen, ook niet via de foutmelding van een andere dienst.
 De sleutels zelf zie je nergens: alleen of ze ingesteld zijn.
 
-**Wat er nog niet is** (uit dezelfde beoordeling): de scanner leest nog steeds alleen de titel, het fragment en
-het adres die de zoekdienst teruggeeft, en opent de pagina zelf niet. Het zoeken begint bij je naam en
-woonplaats, niet bij je e-mailadres. Er is geen AI-agent, geen eigen onderzoek bij databrokers en geen wachtrij
-op de achtergrond. En tweestapsverificatie voor de beheerder ontbreekt nog: zet de site niet openbaar voordat
-die er is.
+Sinds 0.8.0 staan er ook de onderzoekswachtrij, de kostenlimieten en de Data Broker Engine op. De scanner leest
+nog steeds alleen de titel, het fragment en het adres die de zoekdienst teruggeeft, en opent de pagina zelf niet.
+En tweestapsverificatie voor de beheerder ontbreekt nog: zet de site niet openbaar voordat die er is.
 
 ## Wat was er nieuw in 0.6.0?
 
@@ -76,12 +125,15 @@ zaken, afgestemd op jouw instellingen.
 | Blootstelling van persoonsgegevens | **Werkt** | Uit de gevonden lekken: welke *soorten* gegevens zijn blootgesteld (inloggegevens, telefoonnummers, adressen, identiteit, betaalgegevens, online activiteit), met een korte raad. Nooit de gegevens zelf. |
 | Gelekte inloggegevens signaleren | Deels | Je ziet dat wachtwoorden of gebruikersnamen in een lek zaten, niet welke. Een wachtwoord laten nakijken kan nu alleen bij het maken van een account; een eigen pagina daarvoor staat gepland. |
 | Telefoonnummers en adressen | Deels | Als soort gegevens in een datalek, en gemaskeerd (`+31 6 •••• 5678`) als iets dat erop lijkt in de titel of het fragment van een webresultaat staat. Wat de app daar ziet, is een gok op het uiterlijk. |
+| Zoeken op je eigen telefoonnummer | **Werkt met een sleutel**, op je eigen computer | Alleen een nummer dat je met een sms-code hebt bevestigd, in alle gangbare schrijfwijzen. Staat je nummer in een resultaat, dan is dat een *sterke overeenkomst*. Online is er nog geen sms-dienst, dus daar kan het nog niet. |
+| Zoeken op je e-mailadres op het web | **Werkt met een sleutel** | Alleen als je het zelf aanzet bij Zoekgegevens. |
 | Zoeken op het web naar je eigen naam | **Werkt met een sleutel** | Via Brave Search, zodra je `BRAVE_API_KEY` hebt ingesteld. Elk resultaat is een *mogelijke overeenkomst*, met de reden erbij. Zonder sleutel zoekt de site niet en verzint hij niets. De koppeling is gebouwd naar de documentatie van Brave en getest met nagebootste antwoorden, nog niet tegen de echte dienst: draai `npm run controleer` met je eigen sleutel. |
-| Soort site (socialemedia, personenzoeksite, openbaar document) | Deels | Een voorzichtige inschatting aan het adres van een webresultaat. Gericht zoeken op die soorten sites volgt. |
-| Zoeken op de achtergrond, met voortgang | Gepland | Nu loopt een scan terwijl je wacht. Een wachtrij met voortgang is de volgende stap. |
-| Databrokers | Gepland | Fase 3. Alleen via toegestane bronnen; alleen vinden en tonen. |
+| Sociale media en openbare documenten | **Werkt met een sleutel** | Gericht zoeken op je naam bij LinkedIn, Facebook, Instagram, X, TikTok en YouTube, en naar pdf-, Word- en Excel-bestanden. Alleen wat openbaar in de zoekdienst staat. |
+| Zoeken op de achtergrond, met voortgang | **Werkt** | De Deep Scan loopt in een wachtrij, met voortgang per stap en herstel na een herstart. |
+| Databrokers | **Werkt met een sleutel** | Fase 3: een register van 15 databrokers en telefoongidsen, gericht doorzocht via de zoekdienst. Alleen vinden en tonen. |
+| Kostenlimieten | **Werkt** | Per dag, per maand en per Deep Scan. |
 | Darkweb via geautoriseerde bronnen | Gepland | Alleen via een aanbieder die dit legaal levert. Geen eigen crawler. |
-| Zelfstandig onderzoek door een AI-agent | Gepland | Fase 5. Er is nu geen AI in de app: eerst moeten de onderzoeksfuncties zelf echt werken. De voorwaarden van Brave verbieden bovendien om hun resultaten te gebruiken om AI-modellen te trainen of te beoordelen. |
+| Zelfstandig onderzoek door een AI-agent | Gepland | Fase 5. Er is nu geen AI in de app. Eerst moet gekozen worden welke AI-dienst hij gebruikt. De voorwaarden van Brave verbieden bovendien om hun resultaten te gebruiken om AI-modellen te trainen of te beoordelen. |
 | Doorlopende monitoring | Gepland | Fase 6. |
 | Gegevens van het internet verwijderen | Bewust niet | De app zoekt en toont. |
 | Verwijderverzoeken versturen | Bewust niet | Idem. Je eigen account bij Privacyscan wissen kan wel altijd. |
@@ -92,14 +144,15 @@ zaken, afgestemd op jouw instellingen.
 |---|---|---|
 | 1 | Veilig fundament: account, inloggen, e-mail bevestigen, database, dashboard | Klaar |
 | 2 | Breach Intelligence Engine: datalekken en blootstelling, met twee bronnen | Klaar (darkweb volgt zodra er een geautoriseerde aanbieder is) |
-| 3 | Data Broker Engine | Nog niet gebouwd |
-| 4 | Deep Research Engine: openbare internetbronnen en documenten | Begonnen: de Deep Scan, zoeken op het web met Brave, de bewijscontrole en de gemaskeerde gegevens bestaan; een achtergrondscanner met voortgang en gericht zoeken naar sites en documenten nog niet |
+| 3 | Data Broker Engine: gericht zoeken bij een register van databrokers en telefoongidsen | Klaar |
+| 4 | Deep Research Engine: openbare internetbronnen en documenten | Grotendeels: de Deep Scan op de achtergrond, Brave, sociale media, documenten, je telefoonnummer en e-mailadres, en het combineren van bewijs bestaan; de gevonden pagina's zelf lezen nog niet |
 | 5 | Eigen AI-agent | Nog niet gebouwd |
 | 6 | Continuous Monitoring | Nog niet gebouwd |
 
 Een fase heet pas klaar als alles erin echt werkt. De pagina `/bronnen` en het dashboard tonen dezelfde stand.
 
-**Uitgangspunten:** zoek alleen naar jezelf (je eigen, bevestigde e-mailadres en je eigen naam), test op
+**Uitgangspunten:** zoek alleen naar jezelf (je eigen, bevestigde e-mailadres, je eigen, met een code bevestigde
+telefoonnummer en je eigen naam), test op
 nepdata, en laat foto's zoeken en gezichtsherkenning weg. De openbare controle laat alleen zien *in welk
 lek* een adres zat, nooit de gelekte gegevens, en is geen manier om mensen op naam op te zoeken.
 Onderzoek naar iemand anders, ook met toestemming, bestaat nog niet (zie "Bewust (nog) niet gedaan").
@@ -240,13 +293,16 @@ Zet ze in een bestand `.env`: kopieer `.env.example` naar `.env` en pas het aan.
 | `SEARCH_PROVIDER`  | leeg                        | Leeg = Brave als er een sleutel is, anders geen zoekdienst. `brave`, `demo` (verzonnen nepdata) of `none` |
 | `BRAVE_STORAGE_RIGHTS` | leeg                    | `on` alleen als je abonnement bij Brave het bewaren van resultaten toestaat. Anders blijven ze 30 minuten staan |
 | `OWNER_EMAIL`      | leeg                        | Jouw e-mailadres: dat account komt op de beheerpagina (`/beheerder`), en mag online als enige op naam zoeken (zie "Later online zetten") |
+| `BRAVE_MAX_PER_DAY` | `100`                      | Hooguit zoveel zoekopdrachten per dag (UTC). Daarna zoekt de site niet meer tot de dag om is   |
+| `BRAVE_MAX_PER_MONTH` | `900`                    | Hooguit zoveel per maand. 900 blijft binnen het gratis maandtegoed van Brave ($5 bij $5 per 1.000) |
+| `MAX_QUERIES_PER_SCAN` | `25`                    | Hooguit zoveel zoekopdrachten in één Deep Scan (nu gebruikt hij er 5 tot 7)                    |
 
 | Commando                | Wat het doet                                                      |
 |-------------------------|-------------------------------------------------------------------|
 | `npm start`             | Start de site                                                     |
 | `npm run dev`           | Start de site en herstart automatisch als je een bestand wijzigt  |
 | `npm run controleer`    | Probeert Brave en XposedOrNot echt uit, met je eigen sleutel      |
-| `npm test`              | Draait alle tests (513 stuks, een paar seconden)                  |
+| `npm test`              | Draait alle tests (587 stuks, een paar seconden)                  |
 | `npm run test:coverage` | Draait de tests en laat zien welke regels code ze niet raken      |
 
 Alle gegevens staan in `data/privacyscan.db`. Gooi je die map weg, dan begin je opnieuw.
@@ -259,7 +315,8 @@ src/
   app.js            bouwt de app op: beveiligingsheaders, cookies, routes
   routes-public.js  de startpagina, de openbare e-mailcontrole (zonder account) en de pagina /bronnen
   routes.js         de pagina's van fase 1: registreren, inloggen, account verwijderen, privacy
-  routes-scan.js    de pagina's met account: dashboard, bevestigen, zoekgegevens, zoeken, de Deep Scan, resultaten
+  routes-scan.js    de pagina's met account: dashboard, bevestigen, zoeken, de Deep Scan, resultaten
+  routes-profile.js de pagina Zoekgegevens: telefoonnummer bevestigen, zoeken op je e-mailadres, woonplaats; /dev/sms
   routes-admin.js   de beheerpagina (/beheerder): wie erop mag, testen, pauzeren, blokkeren
   admin.js          wat de beheerpagina laat zien (status, bronnen, verbruik, onderzoeken, accounts, instellingen)
   monitor.js        telt de aanvragen naar elke externe dienst, leest de limieten van Brave, weet wat er nu loopt
@@ -271,6 +328,10 @@ src/
   confirm.js        e-mailadres bevestigen: tokens, geldigheid en de bevestigingsmail
   email.js          de regels voor e-mailadressen (netjes maken, controleren), op één plek
   owner.js          de beheerder (OWNER_EMAIL): wie op de beheerpagina komt en online op naam mag zoeken
+  phone.js          telefoonnummers netjes maken, tonen, de schrijfwijzen en herkennen in een tekst
+  phone-codes.js    de sms-code waarmee je je nummer bevestigt (als HMAC bewaard, 10 minuten, 5 pogingen)
+  sms.js            sms'jes versturen: nu alleen een testpostvak, er is nog geen sms-dienst
+  budget.js         de kostenlimieten voor de zoekdienst: per dag, per maand en per Deep Scan
   mail.js           mail versturen (SMTP) of in het testpostvak zetten
   hibp.js           praat met Have I Been Pwned (datalekken van een e-mailadres)
   xon.js            praat met XposedOrNot, de gratis bron (zonder sleutel, met een lage limiet)
@@ -278,7 +339,14 @@ src/
   sources.js        de bronnen van datalekken, het bronnenregister en de zes fases
   confidence.js     hoe zeker is een bevinding? De regels, met bij elke beoordeling de reden
   engine.js         de onderdelen van de Deep Scan: stappen en statussen, blootstelling, verificatie
-  scanner.js        de Deep Scan zelf: voert de stappen uit en bewaart het rapport
+  scanner.js        de Deep Scan zelf: voert de tien stappen uit en bewaart het rapport
+  jobs/queue.js     de onderzoekswachtrij in de database: klaarzetten, oppakken, voortgang, afronden
+  jobs/worker.js    werkt de wachtrij op de achtergrond af, één onderzoek tegelijk, ook na een herstart
+  research/orchestrator.js  wat de werker doet bij een Deep Scan: het account opnieuw lezen, de grenzen, het log
+  research/queries.js       de zoekopdrachten (site:, filetype:, OR), altijd van je eigen gegevens
+  research/web-research.js  één zoekopdracht uitvoeren, beoordelen en bewaren met "gevonden via"
+  research/broker-scan.js   de Data Broker Engine: zoeken bij databrokers en per databroker bijhouden wat er was
+  brokers/registry.js       het register van databrokers en telefoongidsen, met bronnen
   data-classes.js   Nederlandse namen voor de soorten gelekte gegevens ("Passwords" wordt "Wachtwoorden")
   search.js         de zoekopdracht opbouwen, resultaten opschonen, de zoekdiensten (Brave en de demo)
   scans.js          het eigenlijke zoeken: vraag het aan een dienst, bewaar wat terugkomt
@@ -294,7 +362,7 @@ src/
 views/              de pagina's (HTML met EJS)
   bronnen.ejs             het bronnenregister en de roadmap
   beheerder.ejs           de beheerpagina
-  partials/engine.ejs     het paneel "Research Engine" met de vijf stappen
+  partials/engine.ejs     het paneel "Research Engine" met de tien stappen
   partials/evidence.ejs   de bron, datum en zekerheid bij een bevinding
 public/             de vormgeving (CSS)
 scripts/            controleer-bronnen.js: `npm run controleer`
@@ -305,21 +373,34 @@ test/               de tests
 
 ## Hoe het zoeken werkt
 
-**De Deep Scan.** Op het dashboard staat **Start Deep Scan**. Eén klik laat de scanner vijf stappen
-doorlopen, in deze volgorde:
+**De Deep Scan.** Op het dashboard staat **Start Deep Scan**. De knop zet het onderzoek in de wachtrij, en de
+server doorloopt op de achtergrond tien stappen, in deze volgorde:
 
 1. *Datalekdatabases onderzoeken.* Een echte controle van het bevestigde e-mailadres van je account,
    bij XposedOrNot of Have I Been Pwned.
-2. *Databrokers controleren.* Nog niet gebouwd, en dat staat er ook zo in het rapport.
-3. *Openbare internetbronnen onderzoeken.* Een zoekopdracht op je eigen naam (en woonplaats), bij Brave
+2. *Openbare internetbronnen onderzoeken.* Een zoekopdracht op je eigen naam (en woonplaats), bij Brave
    Search. Zonder zoekdienst staat deze stap als "Niet beschikbaar"; online mag alleen de beheerder op
    naam zoeken.
-4. *Mogelijke blootstelling beoordelen.* Rekenwerk op de gevonden lekken: welke soorten gegevens zaten in
+3. *Databrokers controleren.* Je naam bij de databrokers en telefoongidsen uit het register, met
+   `site:`-zoekopdrachten (zie "Databrokers" hieronder).
+4. *Sociale media.* Je naam, beperkt tot LinkedIn, Facebook, Instagram, X, TikTok en YouTube.
+5. *Openbare documenten.* Je naam, beperkt tot pdf-, Word- en Excel-bestanden.
+6. *Je telefoonnummer.* Alleen een nummer dat je met een sms-code hebt bevestigd, in vier schrijfwijzen in
+   één zoekopdracht (`"0612345678" OR "06-12345678" OR …`). Zonder bevestigd nummer: "Overgeslagen".
+7. *Je e-mailadres.* Alleen als je dat zelf hebt aangezet; anders "Overgeslagen".
+8. *Darkweb.* "Niet beschikbaar": er is geen geautoriseerde aanbieder gekoppeld.
+9. *Mogelijke blootstelling beoordelen.* Rekenwerk op de gevonden lekken: welke soorten gegevens zaten in
    die lekken, met een korte raad. Nooit de gegevens zelf, want die hebben we niet, en niet wat er van jou
    in stond: een soort gegeven in een lek betekent niet dat jouw gegeven eruit gelekt is.
-5. *Bewijs controleren.* Heeft elke bevinding een bron, een datum en een zekerheid? Dit is een **controle van
-   onze eigen administratie** en geen controle van de bron zelf. Of een lek echt jouw gegevens bevatte, of
-   een webpagina echt over jou gaat, kun jij alleen nagaan door de bron te openen.
+10. *Bewijs controleren en combineren.* Heeft elke bevinding een bron, een datum en een zekerheid? Dit is een
+   **controle van onze eigen administratie** en geen controle van de bron zelf. Of een lek echt jouw gegevens
+   bevatte, of een webpagina echt over jou gaat, kun jij alleen nagaan door de bron te openen. Daarnaast telt
+   deze stap welke webresultaten met meer dan één van je gegevens gevonden zijn, en welke een sterke
+   overeenkomst zijn.
+
+De stappen 2 tot en met 7 gebruiken allemaal de zoekdienst, met de zoekoperatoren die de Brave Search API
+ondersteunt (`site:`, `filetype:`, `OR`; zie "Bronnen"). Elke zoekopdracht wordt gemaakt van de gegevens van je
+eigen account; niemand kan er iets in typen.
 
 Elke stap eindigt in één van deze toestanden, en dat staat altijd als tekst bij (kleur is nooit het enige):
 
@@ -334,7 +415,35 @@ Elke stap eindigt in één van deze toestanden, en dat staat altijd als tekst bi
 
 Eén stap die niet lukt, stopt de rest niet, en een stap die niet gelopen is, krijgt nooit de status
 "Voltooid". Het rapport van je laatste Deep Scan blijft bewaard en staat op het dashboard en bij je
-resultaten. De Deep Scan telt voor de limiet als één datalekcontrole én één webzoekopdracht.
+resultaten. De Deep Scan telt voor de limiet per account als één datalekcontrole én één webzoekopdracht, en
+voor de kostenlimieten als het aantal zoekopdrachten dat hij echt deed.
+
+**Databrokers (de Data Broker Engine).** Het register (`brokers/registry.js`) noemt per databroker of
+telefoongids de naam, het domein, de landen, wat voor bedrijf het is, welke gegevens het volgens eigen opgave
+verwerkt, hoe wij het mogen onderzoeken en de bron waarmee dat is nagekeken (op 26 november 2026). Wat we niet
+konden nakijken, staat er niet in. De doorzoekbare databrokers gaan in twee zoekopdrachten (Europa en de VS
+apart, zodat de ene groep de resultaten van de andere niet wegdrukt). Per account bewaren we per databroker
+alleen: de toestand (*Mogelijke vermelding*, *Niets gevonden*, *Niet toegankelijk*, *Overgeslagen*,
+*Afgeschermd* of *Nog niet gecontroleerd*), het aantal pagina's, met welk gegeven ze gevonden zijn en wanneer.
+Aan het eind van een Deep Scan telt elke databrokerpagina één keer, ook als hij met je naam én je telefoonnummer
+gevonden is, en telt een databrokerpagina uit de gewone zoekopdracht op je naam ook mee. De resultaten zelf staan
+bij "Op het web", met dezelfde bewaartermijn als de rest.
+
+**Je telefoonnummer.** Een bevestigd e-mailadres bewijst niet dat een telefoonnummer van jou is. Daarom
+onderzoeken we alleen een nummer waarnaar we een code hebben gestuurd en dat jij met die code hebt bevestigd. De
+code is 6 cijfers, 10 minuten geldig, en werkt één keer; na 5 foute pogingen vervalt hij. In de database staat
+niet de code maar een HMAC ervan, met een sleutel die alleen in het geheugen van de server staat: wie de database
+heeft, kan de code er niet uit halen, ook niet door alle miljoen mogelijkheden te proberen. (Na een herstart van
+de server werkt een openstaande code daarom niet meer; vraag dan een nieuwe aan.) Er is nog geen sms-dienst: op je
+eigen computer komt de sms in het testpostvak op `/dev/sms`, en online kan bevestigen nog niet. Staat je
+bevestigde nummer in de titel of het fragment van een resultaat, in welke schrijfwijze ook (ook `+31 (0)6 …`),
+dan is dat een *sterke overeenkomst*. Een langer nummer dat jouw nummer bevat, telt niet.
+
+**Je e-mailadres op het web.** Staat uit tot je het aanzet bij Zoekgegevens: dan gaat je e-mailadres als
+zoekopdracht naar de zoekdienst. Je e-mailadres is al bevestigd, dus dit onderzoek gaat over jou.
+
+**Gevonden via.** Bij elk webresultaat staat met welk gegeven het gevonden is: je naam, je telefoonnummer of je
+e-mailadres. Vindt een volgende zoekopdracht dezelfde pagina met een ander gegeven, dan komt dat erbij.
 
 **Bewijs bij elke bevinding.** Elke bevinding heeft drie dingen die je kunt nalopen:
 
@@ -350,6 +459,7 @@ resultaten. De Deep Scan telt voor de limiet als één datalekcontrole én één
   | Wat er in de titel of het fragment staat | Wat de pagina zegt |
   |---|---|
   | Het bevestigde e-mailadres van je account, als geheel adres | *Sterke overeenkomst* |
+  | Je met een sms-code bevestigde telefoonnummer, in welke schrijfwijze ook | *Sterke overeenkomst* |
   | Je volledige naam én je woonplaats | *Mogelijke overeenkomst* |
   | Je volledige naam zonder woonplaats, of alle delen van je naam los van elkaar | *Zwakke overeenkomst* |
   | Je naam niet | *Geen overeenkomst in titel of fragment* |
@@ -377,7 +487,7 @@ oordeel "Dit ben ik" altijd aan jou.
 
 **Het bronnenregister (`/bronnen`).** Eén pagina die laat zien welke bronnen de scanner gebruikt of gaat
 gebruiken (datalekken, gelekte wachtwoorden, webzoekdienst, databrokers, sociale media, openbare
-documenten, darkweb), met per bron de stand: *Actief*, *Alleen testadressen*, *Demo (nepdata)*, *Niet
+documenten, je telefoonnummer, je e-mailadres op het web, darkweb), met per bron de stand: *Actief*, *Alleen testadressen*, *Demo (nepdata)*, *Niet
 ingesteld*, *Uit* of *Gepland*. Het register verzint niets: een bron die niet bestaat, staat er als "Gepland" en nooit als
 "Actief". De pagina toont ook de zes fases.
 
@@ -538,8 +648,10 @@ blijft je keuze als vingerafdruk van het adres bestaan, ook als het resultaat ze
 ## Privacy
 
 - Gebruikers kunnen **hun account verwijderen** via het dashboard. Dat wist hun naam,
-  e-mailadres, woonplaats, wachtwoord-hash, sessies, bevestigingslinks, gevonden datalekken en
-  webresultaten, hun keuzes, hun scans en het rapport van hun laatste Deep Scan in één keer. Dat werkt
+  e-mailadres, woonplaats, telefoonnummer (en een openstaande sms-code), wachtwoord-hash, sessies,
+  bevestigingslinks, gevonden datalekken en webresultaten, hun keuzes, hun scans, hun onderzoeken in de
+  wachtrij, wat de Data Broker Engine per databroker bijhield en het rapport van hun laatste Deep Scan in
+  één keer. Dat werkt
   omdat elke tabel met gebruikersgegevens `ON DELETE CASCADE` heeft. Geef nieuwe tabellen dat ook, dan
   blijft het zo. (Dit is het enige wat de app verwijdert: je eigen gegevens bij Privacyscan, op jouw verzoek.)
 - **Webresultaten** (titel, adres, fragment) blijven bij Brave maximaal 30 minuten bewaard, en worden dan
@@ -549,6 +661,10 @@ blijft je keuze als vingerafdruk van het adres bestaan, ook als het resultaat ze
 - Het **rapport van de Deep Scan** bewaart per stap een status en een korte tekst, en per soort
   blootgestelde gegevens de namen van de lekken. Geen gelekte gegevens, want die hebben we nooit. Er
   wordt alleen het laatste rapport bewaard.
+- **Je telefoonnummer** staat pas in de database als je het met een sms-code hebt bevestigd, en je kunt het
+  altijd verwijderen bij Zoekgegevens. De code zelf staat er nooit in (alleen een HMAC, hooguit 10 minuten).
+- Per databroker bewaart de **Data Broker Engine** alleen de toestand, het aantal pagina's, met welk gegeven
+  en wanneer: geen adressen of teksten. Die staan bij de webresultaten, met hun eigen bewaartermijn.
 - De **privacyverklaring** staat op `/privacy`. Vul `CONTACT_NAME` en `CONTACT_EMAIL`
   in je `.env` in voordat je de site online zet. De tekst past zich aan op de instellingen:
   met `production` staat er dat zoeken op naam uit staat (of dat alleen de beheerder zoekt, als je
@@ -561,8 +677,9 @@ blijft je keuze als vingerafdruk van het adres bestaan, ook als het resultaat ze
   automatisch opnieuw zoeken. De tekst over de wettelijke grondslag is een concept: laat hem
   controleren voordat je de site openbaar maakt.
 - De **beheerpagina** toont per account het nummer, het e-mailadres, de datums, of het bevestigd of
-  geblokkeerd is en wanneer er gezocht is (met de aantallen). Geen namen, woonplaatsen, zoekopdrachten of
-  bevindingen: die heeft de beheerder niet nodig. Het **systeemlog** heeft geen persoonsgegevens (alleen het
+  geblokkeerd is en wanneer er gezocht is (met de aantallen). Geen namen, woonplaatsen, telefoonnummers,
+  zoekopdrachten of bevindingen: die heeft de beheerder niet nodig. Bij de Data Broker Engine staan alleen
+  totalen per databroker (bij hoeveel accounts er gekeken is en of dat lukte), niet bij wie iets gevonden is. Het **systeemlog** heeft geen persoonsgegevens (alleen het
   nummer van een account als de beheerder het blokkeert of deblokkeert, of als een geblokkeerd account probeert
   in te loggen) en blijft 30 dagen. De **tellers van het verbruik** zijn alleen aantallen per dienst per dag. De
   privacyverklaring zegt dit allemaal onder "Wat de beheerder ziet".
@@ -584,21 +701,22 @@ blijft je keuze als vingerafdruk van het adres bestaan, ook als het resultaat ze
   jou is: de naam typ je zelf in bij het registreren, en hij is nu niet te wijzigen. Op je eigen
   computer is dat jouw verantwoordelijkheid (zoek alleen naar jezelf). Op een openbare site is het
   een gat, want iedereen zou de naam van een ander kunnen laten opzoeken. Daarom staat **zoeken op
-  naam uit zodra `NODE_ENV=production` is**, en bestaat de woonplaats-pagina dan ook niet, behalve
-  voor de beheerder (`OWNER_EMAIL`, zie "Later online zetten"). Voor iedereen aanzetten kan pas
-  met een echte controle, zoals iDIN of een ID-scan met selfie.
+  naam uit zodra `NODE_ENV=production` is**, en vragen we dan ook niet om een woonplaats, behalve
+  aan de beheerder (`OWNER_EMAIL`, zie "Later online zetten"). Voor iedereen aanzetten kan pas
+  met een echte controle, zoals iDIN of een ID-scan met selfie. Je telefoonnummer en e-mailadres kun
+  je wel bewijzen (met een code en een link), dus die mogen wel.
 - **Een tweede zoekdienst.** Er is Brave Search, en de demo. Lees voor je een andere koppelt eerst hun
   voorwaarden, zoals hierboven bij Brave: mag je resultaten bewaren, en mag je ze voor AI gebruiken? Leg in
   `search.js` een nieuwe dienst naast `createBraveSearch()`: met `retainsResults: false` (of zonder dat
   veld) behandelt de app hem als een dienst die bewaren niet toestaat. Bewaren moet een dienst dus
   uitdrukkelijk toestaan.
-- **De achtergrondscanner.** Een scan loopt nu terwijl je wacht. Een echte scanner met een wachtrij,
-  voortgang per stap, aparte onderzoeksprocessen en een herstart die een lopende klus niet kwijtraakt,
-  staat als volgende stap gepland.
-- **Databrokers, gericht zoeken op sociale media en openbare documenten, en darkweb.** De databrokers
-  hebben een eigen onderzoeksstap nodig; de rest staat als "Gepland" in het bronnenregister. Er is niets
-  gebouwd wat doet alsof het werkt. Voor het darkweb komt er geen eigen crawler en kopen of bewaren
-  we geen gestolen gegevens: alleen via een aanbieder die dit legaal en geautoriseerd levert.
+- **Darkweb.** Staat als "Niet beschikbaar" in het rapport. Er komt geen eigen crawler en we kopen of
+  bewaren geen gestolen gegevens: alleen via een aanbieder die dit legaal en geautoriseerd levert.
+- **Afgeschermde databrokers zelf bevragen.** Een databroker zonder openbare pagina's (zoals Pipl) kan
+  alleen via een geautoriseerde gegevensdienst, of met een inzageverzoek namens jou. Dat bestaat nog niet;
+  in het overzicht staat zo'n databroker als *Afgeschermd*.
+- **De sites van databrokers zelf openen of hun zoekfunctie gebruiken.** Bewust niet: we zoeken via de
+  zoekdienst. Veel van die sites verbieden geautomatiseerd gebruik in hun voorwaarden.
 - **Een AI-agent (fase 5).** Komt er een, dan geldt dezelfde regel als nu: geen bevinding zonder
   controleerbare bron, datum en zekerheid. De agent mag onderzoek plannen, samenvatten en beoordelen,
   maar niets verzinnen, en bronnen die niet toegankelijk waren, moeten genoemd worden.
@@ -610,8 +728,10 @@ blijft je keuze als vingerafdruk van het adres bestaan, ook als het resultaat ze
 - **Bescherming tegen bots op de openbare controle.** Nu houdt alleen de limiet per IP-adres
   misbruik tegen. Voor een druk bezochte site hoort er een bot-controle bij, bijvoorbeeld Cloudflare
   Turnstile (zoals HIBP zelf).
-- **Zoeken op telefoonnummer.** Een sms bevestigen is weinig waard als bewijs en kost geld, en er is
-  niets wat we er veilig mee kunnen opzoeken.
+- **Een sms-dienst.** Zoeken op je telefoonnummer werkt, maar alleen met een nummer dat je met een code
+  hebt bevestigd. Op je eigen computer komt die code in het testpostvak. Voor een openbare site is een
+  sms-dienst nodig (met een abonnement en een sleutel, en een eigen afweging over hun voorwaarden en wat
+  zij met de nummers doen). Tot die er is, kan online niemand een nummer bevestigen.
 - **Zelf lekgegevens verzamelen.** De app gebruikt alleen bestaande diensten (Have I Been Pwned en
   XposedOrNot). Er komt geen eigen verzameling van gelekte wachtwoorden of andere gestolen gegevens.
 - **Foto's zoeken en gezichtsherkenning.** Bewust niet.
@@ -627,7 +747,10 @@ blijft je keuze als vingerafdruk van het adres bestaan, ook als het resultaat ze
   de site via https bereikbaar is, anders kun je niet inloggen. De server weigert te starten
   zonder `SMTP_URL` (zonder echte mailserver kan niemand zijn adres bevestigen) en zonder een
   https-`BASE_URL`.
-- Zoeken op naam staat dan uit voor iedereen (zie hierboven). Voor de **openbare controle** op de
+- Zoeken op naam staat dan uit voor iedereen (zie hierboven), en telefoonnummers bevestigen kan niet
+  zolang er geen sms-dienst is. Zoeken op je e-mailadres kan wel, als iemand dat zelf aanzet. Kijk ook
+  naar de kostenlimieten (`BRAVE_MAX_PER_DAY` en `BRAVE_MAX_PER_MONTH`): alle gebruikers delen ze.
+  Voor de **openbare controle** op de
   startpagina heb je een betaalde `HIBP_API_KEY` nodig. De gratis dienst XposedOrNot staat online
   **standaard uit**, want die is bedoeld voor persoonlijk gebruik en weinig verkeer (25 controles per
   uur voor de hele site). Wil je hem online toch gebruiken, voor een kleine site, zet dan bewust
@@ -678,10 +801,12 @@ pas aan een stap als je hem echt wilt.
   sleutel; `pwned.js` doet hetzelfde al bij het registreren.
 - **Tweestapsverificatie voor de beheerder** (een code uit een app als Microsoft Authenticator), voordat de site
   openbaar gaat: nu komt iedereen met jouw wachtwoord op de beheerpagina.
-- **Een achtergrondscanner met voortgang**: een wachtrij van klussen, een proces dat ze afwerkt, voortgang per
-  stap die je op de pagina en op de beheerpagina ziet, en herstel na een herstart van de server. Daarna gericht
-  zoeken naar bekende databrokersites (met de zoekdienst, alleen vinden en tonen) en naar sociale media en
-  openbare documenten.
+- **De AI-agent** (fase 5): onderzoek plannen, bronnen kiezen, resultaten analyseren en overeenkomsten
+  controleren, met het onderscheid bevestigd / mogelijk / niet gecontroleerd, op de achtergrond in de wachtrij
+  die er nu is. Daarvoor moet eerst gekozen worden welke AI-dienst hij gebruikt: dat kost een sleutel en geld,
+  en de persoonsgegevens in een onderzoek gaan dan naar die dienst. Let op de voorwaarden van Brave: hun
+  resultaten mogen niet gebruikt worden om AI-modellen te trainen, te beoordelen of te verbeteren.
+- **Een sms-dienst**, zodat ook online een telefoonnummer bevestigd kan worden.
 - **Pagina's zelf onderzoeken**: alleen bij bronnen waar dat mag, en met de afwegingen die daarbij horen (de
   voorwaarden van de site, robots.txt, wat je bewaart).
 - **Een identiteitscontrole** (bijvoorbeeld iDIN of een ID-scan) voordat zoeken op naam voor andere
@@ -690,10 +815,6 @@ pas aan een stap als je hem echt wilt.
 - **Automatisch opnieuw zoeken** met een mail als er iets nieuws is (fase 6).
 - **Een bot-controle** (bijvoorbeeld Cloudflare Turnstile) op de openbare controle, `trust proxy` en een
   gecontroleerde privacyverklaring, voor je de site online zet.
-- **Een AI-agent** (fase 5), pas als de onderzoeksfuncties zelf echt werken en gecontroleerd zijn. Let op
-  de voorwaarden van Brave: hun resultaten mogen niet gebruikt worden om AI-modellen te trainen, te
-  beoordelen of te verbeteren. Een agent die onderzoek plant, kan daarom niet zomaar op Brave-resultaten
-  getraind of geëvalueerd worden.
 
 ## Bronnen
 
@@ -705,6 +826,8 @@ pas aan een stap als je hem echt wilt.
 - [Brave Search API: limieten](https://api-dashboard.search.brave.com/documentation/guides/rate-limiting): de headers
   `X-RateLimit-Limit`, `-Policy`, `-Remaining` en `-Reset` die de beheerpagina leest, en dat alleen geslaagde
   aanvragen meetellen en betaald worden.
+- [Brave Search API: zoekoperatoren](https://api-dashboard.search.brave.com/documentation/resources/search-operators):
+  `site:` (ook subdomeinen), `filetype:`, en `AND`/`OR`/`NOT` in hoofdletters, gewoon in de zoekopdracht.
 - [Brave Search API](https://brave.com/search/api): de actuele prijzen, en de
   [voorwaarden](https://api-dashboard.search.brave.com/terms-of-service): niet bewaren (3(b)(i)), geen afgeleide
   werken (3(b)(ii)), geen AI-training of -beoordeling (3(b)(xiii)), "Powered by Brave" tonen is optioneel (4(d)).

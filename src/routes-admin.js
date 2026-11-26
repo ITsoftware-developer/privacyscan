@@ -11,11 +11,12 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import {
-  accountExists, accountOverview, blockAccount, findingTotals, format, notBuilt, recentRuns, recentScans,
+  accountExists, accountOverview, blockAccount, brokerEngineOverview, findingTotals, format, notBuilt, recentRuns, recentScans,
   scannerSettings, searchServiceId, sourceRows, systemStatus, unblockAccount, usageOverview,
 } from './admin.js';
 import { canPause, setPaused } from './controls.js';
-import { countRecentEvents, listEvents, logEvent } from './events.js';
+import { JOB_ERRORS, countRecentEvents, listEvents, logEvent } from './events.js';
+import { JOB_STATUSES, queueOverview } from './jobs/queue.js';
 import { SqliteStore } from './limit-store.js';
 import { isOwner } from './owner.js';
 import { probeHibp, probeSearch, probeXon } from './probes.js';
@@ -45,7 +46,7 @@ function notFound(res) {
 const parseId = (value) => (/^\d{1,15}$/.test(String(value)) ? Number(value) : 0);
 
 export function createAdminRoutes({
-  db, production, ownerEmail, monitor, search, check, mailer, limits,
+  db, production, ownerEmail, monitor, search, check, mailer, limits, budget,
 }) {
   const router = Router();
 
@@ -92,9 +93,16 @@ export function createAdminRoutes({
     res.render('beheerder', {
       notice: noticeFrom(req.query),
       status: systemStatus({ db, monitor, production, search, check, mailer, now }),
-      sources: sourceRows({ db, search, check, live }),
-      usage: usageOverview({ usage: monitor.usage(now), live }),
+      sources: sourceRows({
+        db, search, check, live, budget, now,
+      }),
+      usage: usageOverview({
+        usage: monitor.usage(now), live, db, budget, now,
+      }),
       running: monitor.running(),
+      queue: queueOverview(db),
+      jobStatuses: JOB_STATUSES,
+      jobErrors: JOB_ERRORS,
       runs: recentRuns(db),
       scans: recentScans(db),
       totals: findingTotals(db, now),
@@ -102,7 +110,10 @@ export function createAdminRoutes({
       eventCounts: countRecentEvents(db, now),
       onlyProblems,
       overview: accountOverview(db, { now }),
-      settings: scannerSettings({ limits, search, check }),
+      settings: scannerSettings({
+        limits, search, check, budget,
+      }),
+      brokerEngine: brokerEngineOverview(db, now),
       plans: notBuilt(),
       meId: req.user.id,
       now,

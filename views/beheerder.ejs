@@ -19,6 +19,7 @@
   <li><a href="#bronnen">Databronnen</a></li>
   <li><a href="#verbruik">API-verbruik</a></li>
   <li><a href="#onderzoeken">Onderzoeken</a></li>
+  <li><a href="#databrokers">Data Broker Engine</a></li>
   <li><a href="#log">Systeemlog</a></li>
   <li><a href="#accounts">Accounts</a></li>
   <li><a href="#instellingen">Scannerinstellingen</a></li>
@@ -152,6 +153,14 @@
     <p class="hint">Aanvragen die deze site zelf stuurde, per dag in UTC (vandaag is <%= usage.today %>).</p>
 
     <h3>Brave Search: limieten en kosten</h3>
+    <p class="card-text">
+      Kostengrens van de site: vandaag <strong><%= fmt.number(usage.brave.budget.day.used) %></strong> van <%= fmt.number(usage.brave.budget.day.max) %>,
+      deze maand <strong><%= fmt.number(usage.brave.budget.month.used) %></strong> van <%= fmt.number(usage.brave.budget.month.max) %>
+      zoekopdrachten, en hooguit <%= fmt.number(usage.brave.perScan) %> per Deep Scan.
+      <% if (usage.brave.budget.reached) { %>
+        <span class="state state-warn">Bereikt: geen zoekopdrachten meer <%= usage.brave.budget.reached === 'month' ? 'deze maand' : 'vandaag' %></span>
+      <% } %>
+    </p>
     <% if (usage.brave.limits) { %>
       <ul class="plain-list">
         <% usage.brave.limits.forEach((limit) => { %>
@@ -177,17 +186,49 @@
 
   <article class="card" id="onderzoeken">
     <h2>Onderzoeken</h2>
-    <h3>Nu bezig</h3>
-    <% if (running.length === 0) { %>
-      <p class="card-text">Er loopt op dit moment geen onderzoek.</p>
+    <h3>Onderzoekswachtrij</h3>
+    <p class="card-text">
+      <%= fmt.count(queue.counts.queued, 'onderzoek wacht', 'onderzoeken wachten') %>, <%= fmt.count(queue.counts.running, 'loopt', 'lopen') %>;
+      <%= fmt.number(queue.counts.done) %> klaar en <%= fmt.number(queue.counts.failed) %> mislukt in de laatste 30 dagen.
+    </p>
+    <% if (queue.active.length > 0) { %>
+      <div class="admin-scroll">
+        <table class="admin-table">
+          <thead><tr><th>Nr.</th><th>Account</th><th>Toestand</th><th>Stap</th><th>Sinds</th></tr></thead>
+          <tbody>
+            <% queue.active.forEach((job) => { const current = job.steps.find((step) => step.status === 'running'); %>
+              <tr>
+                <td>#<%= job.id %></td>
+                <td>#<%= job.userId %></td>
+                <td><span class="state state-<%= jobStatuses[job.status].tone %>"><%= jobStatuses[job.status].label %></span></td>
+                <td><%= current ? describeStep(current).title : '–' %> <span class="muted">(<%= job.steps.filter((step) => !['pending', 'running'].includes(step.status)).length %> van <%= job.steps.length %> klaar)</span></td>
+                <td><%= fmt.duration(now - (job.startedAt ?? job.createdAt)) %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+    <% if (queue.failed.length > 0) { %>
+      <p class="card-text">Laatst mislukt:</p>
+      <ul class="plain-list">
+        <% queue.failed.forEach((job) => { %>
+          <li>#<%= job.id %> (account #<%= job.userId %>), <%= formatDateTime(job.finishedAt) %>: <%= jobErrors[job.error] ?? jobErrors.unexpected %></li>
+        <% }) %>
+      </ul>
+    <% } %>
+    <p class="hint">Een Deep Scan loopt op de achtergrond, één tegelijk. Na een herstart gaat wat liep terug in de wachtrij.</p>
+
+    <h3>Nu bezig (losse scans)</h3>
+    <% if (running.filter((run) => run.scan !== 'deep').length === 0) { %>
+      <p class="card-text">Er loopt op dit moment geen losse scan.</p>
     <% } else { %>
       <ul class="plain-list">
-        <% running.forEach((run) => { %>
+        <% running.filter((run) => run.scan !== 'deep').forEach((run) => { %>
           <li><%= scanLabels[run.scan] ?? 'Onderzoek' %>, bezig sinds <%= fmt.duration(now - run.startedAt) %></li>
         <% }) %>
       </ul>
     <% } %>
-    <p class="hint">Er is nog geen wachtrij op de achtergrond: een onderzoek loopt zolang het verzoek duurt, meestal een paar seconden.</p>
 
     <h3>Laatste Deep Scans</h3>
     <% if (runs.length === 0) { %>
@@ -238,6 +279,58 @@
       </div>
     <% } %>
     <p class="hint">Per account bewaart de site alleen de laatste scan van elke soort. Wat er gevonden is, staat hier niet: alleen de aantallen.</p>
+  </article>
+
+  <article class="card" id="databrokers">
+    <h2>Data Broker Engine</h2>
+    <p class="card-text">
+      <%= fmt.count(brokerEngine.rows.length, 'databroker of telefoongids', 'databrokers en telefoongidsen') %> in het register,
+      nagekeken op <%= formatDay(brokerEngine.checkedOn) %>. Bij <%= fmt.number(brokerEngine.searchable) %> zoekt de Deep Scan
+      op de eigen naam van de gebruiker, via de zoekdienst met site:-zoekopdrachten
+      (<%= fmt.count(brokerEngine.queriesPerScan, 'zoekopdracht', 'zoekopdrachten') %> per Deep Scan); hun sites zelf openen we niet.
+      <% if (brokerEngine.closed.length > 0) { %>
+        Afgeschermd, en dus niet doorzocht: <%= brokerEngine.closed.map((broker) => broker.name).join(', ') %>.
+      <% } %>
+    </p>
+    <div class="admin-scroll">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Databroker</th><th>Soort en landen</th><th>Verwerkt</th>
+            <th class="num">Accounts (30 dagen)</th><th class="num">Niet toegankelijk</th><th class="num">Overgeslagen</th><th>Laatst</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% brokerEngine.rows.forEach((row) => { %>
+            <tr>
+              <td>
+                <a href="<%= row.broker.source %>" target="_blank" rel="noopener noreferrer"><%= row.broker.name %></a><br>
+                <span class="muted"><%= row.broker.domain %><%= row.broker.access === 'closed' ? ' · afgeschermd' : '' %></span>
+              </td>
+              <td><%= row.broker.kind %><br><span class="muted"><%= row.broker.countries.join(', ') %></span></td>
+              <td><%= row.broker.data.join(', ') %></td>
+              <td class="num"><%= fmt.number(row.checked) %></td>
+              <td class="num"><%= fmt.number(row.failed) %></td>
+              <td class="num"><%= fmt.number(row.skipped) %></td>
+              <td><% if (row.last) { %><span title="<%= formatDateTime(row.last) %>"><%= fmt.duration(now - row.last) %> geleden</span><% } else { %>—<% } %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+    <p class="hint">
+      De naam van een databroker verwijst naar de bron waarmee we zijn gegevens hebben nagekeken. Per account bewaren we per
+      databroker alleen de toestand, het aantal treffers en het tijdstip; hier staan bewust geen treffers, alleen of het
+      zoeken werkte.
+    </p>
+    <% if (brokerEngine.recognized.length > 0) { %>
+      <details>
+        <summary>Daarnaast herkent de site <%= fmt.count(brokerEngine.recognized.length, 'personenzoeksite', 'personenzoeksites') %> in gewone zoekresultaten</summary>
+        <ul class="admin-sites">
+          <% brokerEngine.recognized.forEach((site) => { %><li><%= site %></li><% }) %>
+        </ul>
+      </details>
+    <% } %>
   </article>
 
   <article class="card" id="log">

@@ -109,6 +109,24 @@ test('het e-mailadres van je account wordt als het jouwe herkend, een ander adre
   assert.equal(signals('Mail anna@example.com', { ownEmail: null })[0].yours, false);
 });
 
+test('je bevestigde telefoonnummer wordt als het jouwe herkend, in elke schrijfwijze; een ander nummer niet', () => {
+  const own = { ownPhone: '+31612345678' };
+  for (const text of ['Bel 06-12345678', 'Tel. +31 6 12345678', '+31 (0)6 12 34 56 78', '0031 6 1234 5678']) {
+    const [signal] = signals(text, own);
+    assert.equal(signal.kind, 'phone', text);
+    assert.equal(signal.yours, true, text);
+  }
+  assert.equal(signals('Bel 06-87655678', own)[0].yours, false); // dezelfde laatste cijfers, een ander nummer
+  assert.equal(signals('Bel 06-12345678')[0].yours, false);
+  assert.equal(signals('Bel 06-12345678', { ownPhone: null })[0].yours, false);
+  // Twee nummers die er gemaskeerd hetzelfde uitzien: is één van jou, dan staat dat erbij.
+  const both = signals('Bel 06-87655678 of 06-12345678', own);
+  assert.equal(both.length, 1);
+  assert.equal(both[0].yours, true);
+  // Het volledige nummer komt nooit in wat de pagina krijgt.
+  assert.doesNotMatch(JSON.stringify(signals('Bel 06-12345678', own)), /12345678|\+31612345678/);
+});
+
 // --- Postcodes ----------------------------------------------------------------------------
 
 test('een postcode laat alleen de eerste twee cijfers en de letters zien, en heet "mogelijk"', () => {

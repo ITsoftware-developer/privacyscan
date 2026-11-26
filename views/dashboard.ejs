@@ -35,9 +35,20 @@
           <span class="badge badge-warn">Nog niet bevestigd</span>
         <% } %>
       </dd>
+      <dt>Telefoonnummer</dt>
+      <dd>
+        <% if (user.phone && user.phone_verified_at) { %>
+          <%= formatPhone(user.phone) %> <span class="badge badge-ok">Bevestigd</span>
+        <% } else { %>
+          <span class="muted">Niet toegevoegd</span>
+        <% } %>
+      </dd>
+      <dt>Zoeken op e-mailadres</dt>
+      <dd><%= user.email_web_at ? 'Aan' : 'Uit' %></dd>
       <dt>Lid sinds</dt><dd><%= memberSince %></dd>
       <dt>Wachtwoord</dt><dd>Veilig opgeslagen met argon2id</dd>
     </dl>
+    <p class="hint"><a href="/profiel">Zoekgegevens beheren</a>: je telefoonnummer, en of we ook op je e-mailadres zoeken.</p>
 
     <% if (!user.email_confirmed_at) { %>
       <div class="alert alert-warning notice-top" role="note">
@@ -60,7 +71,9 @@
   <article class="card card-wide" id="deep-scan">
     <header class="card-head">
       <h2>Deep Scan</h2>
-      <% if (run) { %>
+      <% if (job) { %>
+        <span class="badge badge-warn"><%= job.status === 'queued' ? 'In de wachtrij' : 'Bezig' %></span>
+      <% } else if (run) { %>
         <span class="badge badge-ok">Laatst gedaan op <%= formatDateTime(run.ranAt) %></span>
       <% } else { %>
         <span class="badge">Nog niet gedaan</span>
@@ -74,10 +87,18 @@
         niet bestaat, staat in het rapport met de reden. Alles wat we vinden, krijgt een bron, een datum
         en een beoordeling.
       </p>
-      <form method="post" action="/scan/deep">
-        <button type="submit" class="button button-action">Start Deep Scan</button>
-      </form>
-      <% if (run) { %>
+      <% if (job) { %>
+        <p class="alert alert-warning card-alert" role="status">
+          <strong>Je Deep Scan loopt op de achtergrond</strong>
+          (<%= job.steps.filter((step) => !['pending', 'running'].includes(step.status)).length %> van <%= job.steps.length %> stappen klaar).
+          Je mag de site sluiten. <a href="/resultaten#rapport">Bekijk de voortgang</a>
+        </p>
+      <% } else { %>
+        <form method="post" action="/scan/deep">
+          <button type="submit" class="button button-action">Start Deep Scan</button>
+        </form>
+      <% } %>
+      <% if (run && !job) { %>
         <p class="hint"><a href="/resultaten#rapport">Bekijk het volledige rapport</a></p>
       <% } %>
     <% } %>
@@ -148,6 +169,10 @@
       <p class="card-text">
         Zoeken op je naam staat uit op een openbare site. Een bevestigd e-mailadres bewijst namelijk
         niet dat een naam van jou is.
+      </p>
+      <p class="hint">
+        Op je e-mailadres kan de Deep Scan wel zoeken, want dat is bevestigd. Zet het aan bij
+        <a href="/profiel#e-mail">Zoekgegevens</a>.
       </p>
     <% } else if (!confirmed) { %>
       <p class="card-text">Bevestig eerst je e-mailadres. Daarna kun je hier zoeken waar je naam online opduikt.</p>

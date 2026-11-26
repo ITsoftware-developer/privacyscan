@@ -1,21 +1,23 @@
-// De pagina's voor wie is ingelogd: het dashboard, je e-mailadres bevestigen, je
-// zoekgegevens, zoeken (in datalekken, op het web, of alles tegelijk met de Deep Scan), de
-// resultaten en het testpostvak voor op je eigen computer.
+// De pagina's voor wie is ingelogd: het dashboard, je e-mailadres bevestigen, zoeken (in
+// datalekken, op het web, of alles tegelijk met de Deep Scan), de resultaten en het testpostvak
+// voor op je eigen computer. Je zoekgegevens (telefoonnummer, woonplaats) staan in routes-profile.js.
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { requireLogin } from './auth.js';
+import { requireConfirmed, requireLogin } from './auth.js';
+import { CHECKED as BROKERS_CHECKED } from './brokers/registry.js';
 import { CONFIRM_MINUTES, confirmEmail, isConfirmationValid } from './confirm.js';
 import {
   WEB_CHOICES, countFindings, lastRun, lastScan, listFindings, setWebStatus,
 } from './findings.js';
 import { logEvent } from './events.js';
 import { SqliteStore } from './limit-store.js';
+import { activeJob, enqueueJob, latestJob } from './jobs/queue.js';
 import { createMonitor } from './monitor.js';
-import { hasOwnerAddress, isOwner } from './owner.js';
+import { canSearchByName as mayUseName, hasOwnerAddress, isOwner } from './owner.js';
+import { brokerOverview } from './research/broker-scan.js';
 import { ScanError } from './scan-error.js';
-import { runDeepScan } from './scanner.js';
+import { plannedSteps } from './scanner.js';
 import { scanBreaches, scanWeb } from './scans.js';
-import { parseCity } from './search.js';
 import { sourceById } from './sources.js';
 
 const ONE_HOUR = 60 * 60 * 1000;
@@ -30,7 +32,6 @@ export function isLoopback(address) {
 // (/dashboard?verstuurd), maar we tonen alleen vaste teksten van onszelf.
 const NOTICES = {
   verstuurd: 'We hebben een nieuwe bevestigingsmail gestuurd.',
-  opgeslagen: 'Je woonplaats is opgeslagen.',
 };
 
 function noticeFrom(query) {
@@ -54,6 +55,8 @@ function problemsFor(source) {
     no_search: [503, 'Er is geen zoekdienst ingesteld, dus we kunnen niet op het web zoeken. Zet BRAVE_API_KEY in je .env (zie de README). Staat hij er al in? Start de site dan opnieuw: hij leest .env alleen bij het starten.'],
     paused: [503, `${source.name} is tijdelijk uitgezet door de beheerder. Probeer het later nog eens.`],
     search_paused: [503, 'Zoeken op het web is tijdelijk uitgezet door de beheerder. Probeer het later nog eens.'],
+    search_budget: [429, 'De site heeft het maximum aantal zoekopdrachten voor vandaag of deze maand bereikt (een grens tegen hoge kosten). Probeer het later opnieuw.'],
+    search_budget_scan: [429, 'De grens van het aantal zoekopdrachten voor één onderzoek is bereikt.'],
     search_failed: [502, 'De zoekdienst gaf een fout. Probeer het later nog eens.'],
     search_bad_key: [502, 'De zoekdienst accepteerde de sleutel niet. Controleer BRAVE_API_KEY in je .env.'],
     search_rate_limited: [429, 'De zoekdienst staat nu geen aanvragen meer toe: de limiet of het tegoed is op. Probeer het later nog eens.'],
@@ -66,23 +69,15 @@ function problemsFor(source) {
 const TOO_OFTEN = 'Je hebt het afgelopen uur al een paar keer gezocht. Probeer het later opnieuw.';
 
 // Pagina's met een token in de link horen niet in de cache van de browser.
-function noStore(res) {
+export function noStore(res) {
   res.set('Cache-Control', 'no-store');
-}
-
-// Zoeken mag pas als je e-mailadres bevestigd is: dan weten we dat er echt iemand
-// achter dit adres zit.
-function requireConfirmed(req, res, next) {
-  if (req.user.email_confirmed_at) return next();
-  res.status(403).render('fout', {
-    title: 'Bevestig eerst je e-mailadres',
-    message: 'Zolang je e-mailadres niet bevestigd is, zoeken we niets voor je op. Klik op de link in de bevestigingsmail, of vraag op je dashboard een nieuwe aan.',
-  });
 }
 
 export function createScanRoutes({
   db, production, mailer, hibp, search, sendConfirmation, resendLimit, scanLimit, ownerEmail = null,
   monitor = createMonitor(db),
+  jobs = null,              // de werker van de onderzoekswachtrij (zie jobs/worker.js)
+  runJobsInline = false,    // de tests: een onderzoek meteen uitvoeren in plaats van op de achtergrond
 }) {
   const router = Router();
 
@@ -93,12 +88,7 @@ export function createScanRoutes({
     const started = Date.now();
     try {
       const result = await monitor.track(scan, work);
-      if (scan === 'deep') {
-        const done = result.steps.filter((step) => step.status === 'done').length;
-        logEvent(db, 'deep_scan_done', { done, total: result.steps.length, ms: Date.now() - started });
-      } else {
-        logEvent(db, 'scan_done', { scan, found: result.found, added: result.added, ms: Date.now() - started });
-      }
+      logEvent(db, 'scan_done', { scan, found: result.found, added: result.added, ms: Date.now() - started });
       return result;
     } catch (error) {
       if (error instanceof ScanError) logEvent(db, 'scan_failed', { scan, code: error.code });
@@ -114,13 +104,7 @@ export function createScanRoutes({
   // e-mailadres bewijst niet dat de naam van jou is (zie scans.js). Alleen de
   // beheerder (OWNER_EMAIL) mag er dan wel op zoeken. Op je eigen computer mag
   // iedereen die erbij kan, want dat ben jij.
-  const canSearchByName = (user) => !production || isOwner(user, ownerEmail);
-
-  // Alleen wie op naam mag zoeken, heeft een woonplaats nodig. Voor alle anderen
-  // bestaat die pagina niet: we bewaren niets wat we niet gebruiken.
-  function requireNameSearch(req, res, next) {
-    return canSearchByName(req.user) ? next() : next('route');
-  }
+  const canSearchByName = (user) => mayUseName(user, { production, ownerEmail });
 
   const limiter = ({ prefix, limit, handler }) => rateLimit({
     windowMs: ONE_HOUR,
@@ -152,7 +136,13 @@ export function createScanRoutes({
   // Toont de resultatenpagina, eventueel met een melding of een foutmelding.
   function renderResults(req, res, { status = 200, error = null, notice = null } = {}) {
     const { breaches, web } = listFindings(db, req.user.id);
+    // Loopt er een Deep Scan op de achtergrond, dan ververst de pagina zichzelf tot hij klaar is.
+    const job = activeJob(db, req.user.id);
+    const last = job ? null : latestJob(db, req.user.id);
     res.status(status).render('resultaten', {
+      job,
+      failedJob: last?.status === 'failed' ? last : null,
+      refreshSeconds: job ? 3 : null,
       breaches,
       web,
       choices: WEB_CHOICES,
@@ -161,6 +151,10 @@ export function createScanRoutes({
       run: lastRun(db, req.user.id),
       checkSource: sourceOf(req.user),
       sourceById,
+      // De Data Broker Engine: per databroker uit het register wat we weten (zie research/broker-scan.js).
+      brokers: brokerOverview(db, req.user.id),
+      brokersChecked: BROKERS_CHECKED,
+      searchAllowed: canSearchByName(req.user),
       error,
       notice,
       wide: true,
@@ -177,6 +171,9 @@ export function createScanRoutes({
   function scanNotice(user, query) {
     const userId = user.id;
     if (query.gescand === 'deep') {
+      if (activeJob(db, userId)) {
+        return 'Je Deep Scan loopt op de achtergrond. Je mag deze pagina sluiten: het rapport komt hier, en op je dashboard zie je hoe ver hij is.';
+      }
       const run = lastRun(db, userId);
       if (!run) return null;
       const done = run.steps.filter((step) => step.status === 'done').length;
@@ -219,6 +216,7 @@ export function createScanRoutes({
       breachScan: lastScan(db, req.user.id, 'breach'),
       webScan: lastScan(db, req.user.id, 'web'),
       run: lastRun(db, req.user.id),
+      job: activeJob(db, req.user.id),
       searchAllowed: canSearchByName(req.user),
       ownerMode: production && isOwner(req.user, ownerEmail),
       // De beheerder die nog niet bevestigd heeft, krijgt de uitnodiging om dat te doen
@@ -266,26 +264,6 @@ export function createScanRoutes({
     res.redirect(303, '/dashboard?verstuurd');
   });
 
-  // --- Zoekgegevens ----------------------------------------------------------
-  // Je naam en e-mailadres komen uit je account. Alleen de woonplaats vul je hier in.
-  // Die is alleen nuttig als je op naam mag zoeken (zie requireNameSearch).
-
-  router.get('/profiel', requireLogin, requireNameSearch, (req, res) => {
-    res.render('profiel', { error: null, value: req.user.city ?? '' });
-  });
-
-  router.post('/profiel', requireLogin, requireNameSearch, (req, res) => {
-    const { city, error } = parseCity(req.body.woonplaats);
-    if (error) {
-      return res.status(400).render('profiel', {
-        error,
-        value: String(req.body.woonplaats ?? '').trim().slice(0, 60),
-      });
-    }
-    db.prepare('UPDATE users SET city = ? WHERE id = ?').run(city, req.user.id);
-    res.redirect(303, '/dashboard?opgeslagen');
-  });
-
   // --- Zoeken ----------------------------------------------------------------
 
   // De Deep Scan: alle stappen achter elkaar, op de gegevens van dit account. Net als de
@@ -293,10 +271,17 @@ export function createScanRoutes({
   // hij stopt de rest niet. Hij vraagt één keer aan de bron van datalekken en één keer aan de
   // zoekdienst, dus hij telt voor allebei mee in de limieten: zo kun je de aanvragen die de
   // bronnen ons toestaan niet verdubbelen door de Deep Scan naast de losse knoppen te gebruiken.
-  router.post('/scan/deep', requireLogin, requireConfirmed, breachLimiter, webLimiter, async (req, res) => {
-    await tracked('deep', () => runDeepScan({
-      db, user: req.user, hibp, search, allowWeb: canSearchByName(req.user),
-    }));
+  //
+  // De Deep Scan loopt op de achtergrond (zie jobs/ en research/orchestrator.js): de knop zet hem in de
+  // wachtrij, en de resultatenpagina laat zien hoe ver hij is. Staat er al een in de wachtrij, dan
+  // telt de knop niet nog een keer mee in de limieten.
+  const alreadyQueued = (req, res, next) => (activeJob(db, req.user.id)
+    ? res.redirect(303, '/resultaten?gescand=deep#rapport')
+    : next());
+
+  router.post('/scan/deep', requireLogin, requireConfirmed, alreadyQueued, breachLimiter, webLimiter, async (req, res) => {
+    enqueueJob(db, { userId: req.user.id, kind: 'deep', steps: plannedSteps() });
+    if (runJobsInline && jobs) await jobs.drain();
     res.redirect(303, '/resultaten?gescand=deep#rapport');
   });
 

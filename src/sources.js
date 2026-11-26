@@ -9,6 +9,7 @@
 // 2. Het bronnenregister ("PrivacyScan Intelligence"): álle bronnen die de scanner gebruikt of
 //    gaat gebruiken, ook de nog niet gebouwde, met eerlijk de stand van zaken. Het register
 //    verzint niets: een bron die niet bestaat, staat er als "gepland" in en nooit als "actief".
+import { BROKERS } from './brokers/registry.js';
 import { WEB_RESULT_MINUTES } from './retention.js';
 
 export const SOURCES = {
@@ -80,8 +81,8 @@ export const STATE_LABELS = {
 export const PHASES = [
   { number: 1, name: 'Veilig fundament', short: 'Fundament', done: true, text: 'Registreren, inloggen, e-mailadres bevestigen, database en dashboard.' },
   { number: 2, name: 'Breach Intelligence Engine', short: 'Datalekken', done: true, text: 'Bekende datalekken en blootgestelde persoonsgegevens opsporen, met twee bronnen. Darkwebbronnen volgen zodra er een geautoriseerde aanbieder is.' },
-  { number: 3, name: 'Data Broker Engine', short: 'Databrokers', done: false, text: 'Gegevens bij databrokers onderzoeken via toegestane bronnen. Dit begint met gerichte zoekopdrachten op een korte lijst van bekende personenzoeksites.' },
-  { number: 4, name: 'Deep Research Engine', short: 'Deep Research', done: false, text: 'Uitgebreid onderzoek van openbare internetbronnen en documenten. Een echte zoekdienst (Brave Search) is gekoppeld en werkt zodra je een sleutel instelt; het onderzoek op de achtergrond, met voortgang, volgt.' },
+  { number: 3, name: 'Data Broker Engine', short: 'Databrokers', done: true, text: 'Gegevens bij databrokers onderzoeken via toegestane bronnen: gerichte zoekopdrachten op een register van bekende personenzoeksites en telefoongidsen, met per databroker wat ze verwerken, waar en hoe we ze mogen onderzoeken.' },
+  { number: 4, name: 'Deep Research Engine', short: 'Deep Research', done: false, text: 'Uitgebreid onderzoek van openbare internetbronnen en documenten. Werkt al: de zoekdienst (Brave Search), sociale media, documenten, je bevestigde telefoonnummer en, als je dat wilt, je e-mailadres, op de achtergrond met voortgang en een kostengrens. Nog niet: de gevonden pagina\'s zelf lezen en beoordelen.' },
   { number: 5, name: 'Eigen AI-agent', short: 'AI-agent', done: false, text: 'Zelfstandig onderzoek plannen, uitvoeren, controleren en rapporteren.' },
   { number: 6, name: 'Continuous Monitoring', short: 'Monitoring', done: false, text: 'Automatisch opnieuw scannen en waarschuwen bij nieuwe bevindingen.' },
 ];
@@ -129,7 +130,7 @@ const REGISTER = [
     name: 'Databrokers',
     url: null,
     gives: 'Of jouw gegevens staan bij bedrijven die persoonsgegevens verzamelen en doorverkopen.',
-    needs: 'Een lijst met databrokersites die we met de zoekdienst controleren. Dat is nog niet gebouwd. Alleen via toegestane bronnen: we lezen geen sites uit waar dat niet mag.',
+    needs: 'Een zoekdienst (BRAVE_API_KEY). Dan zoeken we op je naam bij de databrokers uit ons register, met site:-zoekopdrachten. Alleen via toegestane bronnen: we openen hun sites niet en lezen ze niet uit.',
   },
   {
     id: 'social',
@@ -138,7 +139,7 @@ const REGISTER = [
     name: 'Sociale media',
     url: null,
     gives: 'Profielen en vermeldingen van jouw naam op sociale netwerken.',
-    needs: 'Een zoekdienst, en een aparte zoekopdracht per netwerk (nog niet gebouwd). We kijken alleen naar wat openbaar is en loggen nergens in.',
+    needs: 'Een zoekdienst (BRAVE_API_KEY). We kijken alleen naar wat openbaar in de zoekdienst staat en loggen nergens in.',
   },
   {
     id: 'documenten',
@@ -147,7 +148,25 @@ const REGISTER = [
     name: 'Openbare documenten',
     url: null,
     gives: 'Openbare bestanden, zoals pdf\'s, waarin jouw naam staat.',
-    needs: 'Een zoekdienst, en een aparte zoekopdracht naar bestandstypen (nog niet gebouwd).',
+    needs: 'Een zoekdienst (BRAVE_API_KEY), met een zoekopdracht naar bestandstypen.',
+  },
+  {
+    id: 'telefoon',
+    category: 'web',
+    phase: 4,
+    name: 'Je telefoonnummer',
+    url: null,
+    gives: 'Pagina\'s, telefoongidsen en databrokers waarop je eigen telefoonnummer staat, in alle gangbare schrijfwijzen.',
+    needs: 'Een zoekdienst (BRAVE_API_KEY) en een nummer dat je met een sms-code hebt bevestigd. Op een openbare site is daarvoor een sms-dienst nodig; die is er nog niet.',
+  },
+  {
+    id: 'email-web',
+    category: 'web',
+    phase: 4,
+    name: 'Je e-mailadres op het web',
+    url: null,
+    gives: 'Pagina\'s waarop je e-mailadres letterlijk staat, zoals ledenlijsten of oude forumberichten.',
+    needs: 'Een zoekdienst (BRAVE_API_KEY) en jouw toestemming: je zet het zelf aan bij Zoekgegevens, want dan gaat je e-mailadres naar de zoekdienst.',
   },
   {
     id: 'darkweb',
@@ -164,7 +183,10 @@ const REGISTER = [
 //   emailSources  welke bron(nen) e-mailadressen controleren (zie breach-check.js)
 //   hasKey        kan de site echte adressen controleren (HIBP-sleutel of de gratis dienst)?
 //   search        de zoekdienst voor het web, of null
-export function describeRegister({ emailSources = ['hibp'], hasKey = false, search = null } = {}) {
+//   sms           kan de site een code per sms sturen (zie sms.js)? Zonder sms geen bevestigd telefoonnummer.
+export function describeRegister({
+  emailSources = ['hibp'], hasKey = false, search = null, sms = false,
+} = {}) {
   const hibpKey = hasKey && emailSources.includes('hibp');
   const xonOn = emailSources.includes('xon');
 
@@ -181,11 +203,14 @@ export function describeRegister({ emailSources = ['hibp'], hasKey = false, sear
       : `De voorwaarden van de dienst staan bewaren niet toe, dus we tonen resultaten hooguit ${WEB_RESULT_MINUTES} minuten; alleen jouw keuzes blijven.`;
     searchState = { state: 'actief', note: `Je naam en woonplaats gaan als zoekopdracht naar ${search.label ?? search.name}. ${kept}` };
   }
-  // Sociale netwerken en openbare documenten komen, voor zover ze in de gewone zoekopdracht
-  // voorkomen, als zodanig gemarkeerd in de resultaten. Apart zoeken doen we nog niet.
-  const labelled = search && !search.isDemo
-    ? { state: 'gepland', note: 'Wat hiervan in de gewone zoekopdracht voorkomt, markeren we in de resultaten. Aparte zoekopdrachten zijn nog niet gebouwd.' }
-    : null;
+  // Databrokers, sociale media en documenten: aparte zoekopdrachten in de Deep Scan, met dezelfde
+  // zoekdienst. Zonder (echte) zoekdienst gebeurt er niets, en dat staat er dan.
+  const viaSearch = (note) => {
+    if (!search) return { state: 'niet-ingesteld', note: 'Er is geen zoekdienst ingesteld, dus hier wordt niet gezocht.' };
+    if (search.isDemo) return { state: 'demo', note: 'De demo verzint resultaten; hier wordt niet echt gezocht.' };
+    return { state: 'actief', note };
+  };
+  const brokerCount = BROKERS.filter((broker) => broker.access === 'search').length;
 
   const states = {
     hibp: hibpKey
@@ -196,7 +221,13 @@ export function describeRegister({ emailSources = ['hibp'], hasKey = false, sear
       : { state: 'uit', note: 'Staat uit. Met FREE_BREACH_CHECK=on controleert de app echte adressen gratis.' },
     'pwned-passwords': { state: 'actief', note: 'Wordt nu gebruikt bij het maken van een account.' },
     search: searchState,
-    ...(labelled ? { social: labelled, documenten: labelled } : {}),
+    databrokers: viaSearch(`In de Deep Scan zoeken we op je naam bij ${brokerCount} bekende databrokers en telefoongidsen, met site:-zoekopdrachten. We openen hun sites niet. Per databroker zie je wat ze verwerken en of er iets gevonden is.`),
+    social: viaSearch('In de Deep Scan één zoekopdracht op je naam, beperkt tot LinkedIn, Facebook, Instagram, X, TikTok en YouTube. Alleen wat openbaar in de zoekdienst staat.'),
+    documenten: viaSearch('In de Deep Scan één zoekopdracht op je naam naar pdf-, Word- en Excel-bestanden.'),
+    telefoon: sms
+      ? viaSearch('In de Deep Scan één zoekopdracht met de schrijfwijzen van je nummer, maar alleen als je het met een sms-code hebt bevestigd (bij Zoekgegevens). Een bevestigd e-mailadres bewijst niet dat een nummer van jou is.')
+      : { state: 'niet-ingesteld', note: 'Er is nog geen sms-dienst gekoppeld, dus niemand kan hier een telefoonnummer bevestigen. Zonder bevestiging onderzoeken we geen nummer.' },
+    'email-web': viaSearch('In de Deep Scan één zoekopdracht op je e-mailadres, maar alleen als je dat zelf aanzet bij Zoekgegevens.'),
   };
 
   return REGISTER.map((entry) => ({

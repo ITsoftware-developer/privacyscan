@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  STATUSES, STEP_DEFS, STEP_TITLES, describeStep, exposureFrom, exposureNote, publicPlan, publicRun,
+  PUBLIC_STEPS, STATUSES, STEP_DEFS, STEP_TITLES, describeStep, exposureFrom, exposureNote, publicPlan, publicRun,
   verifyFindings, verifyNote, withEvidence,
 } from '../src/engine.js';
 import { SOURCES } from '../src/sources.js';
@@ -17,15 +17,23 @@ const breach = (title, dataClasses, extra = {}) => ({
   name: title, title, dataClasses, url: `https://example.com/${title.toLowerCase()}`, ...extra,
 });
 
-test('de vijf stappen heten zoals in het plan, in die volgorde', () => {
+test('de tien stappen heten zoals in het plan, in die volgorde', () => {
   assert.deepEqual(STEP_DEFS.map((step) => step.title), [
     'Datalekdatabases onderzoeken',
-    'Databrokers controleren',
     'Openbare internetbronnen onderzoeken',
+    'Databrokers controleren',
+    'Sociale media onderzoeken',
+    'Openbare documenten zoeken',
+    'Telefoonnummer onderzoeken',
+    'E-mailadres op het web zoeken',
+    'Darkwebbronnen',
     'Mogelijke blootstelling beoordelen',
-    'Bewijs controleren',
+    'Bewijs controleren en combineren',
   ]);
-  assert.deepEqual(STEP_DEFS.map((step) => step.id), ['datalekken', 'databrokers', 'web', 'blootstelling', 'verificatie']);
+  assert.deepEqual(STEP_DEFS.map((step) => step.id), [
+    'datalekken', 'web', 'databrokers', 'sociale-media', 'documenten', 'telefoon', 'e-mail', 'darkweb',
+    'blootstelling', 'verificatie',
+  ]);
   assert.equal(STEP_TITLES.databrokers, 'Databrokers controleren');
 });
 
@@ -204,9 +212,10 @@ test('verifyNote vertelt wat er gecontroleerd is, en noemt elk gebrek', () => {
 
 test('voordat er iets gedaan is, staat er wat er te doen is, en niets is voltooid', () => {
   const plan = publicPlan();
-  assert.deepEqual(plan.map((step) => step.id), STEP_DEFS.map((step) => step.id));
-  assert.deepEqual(plan.map((step) => step.title), STEP_DEFS.map((step) => step.title));
-  assert.deepEqual(plan.map((step) => step.status), ['available', 'planned', 'account', 'after', 'after']);
+  // De startpagina laat vijf van de stappen zien: wat een bezoeker zonder account kan, en wat in een account kan.
+  assert.deepEqual(plan.map((step) => step.id), PUBLIC_STEPS);
+  assert.deepEqual(plan.map((step) => step.title), PUBLIC_STEPS.map((id) => STEP_TITLES[id]));
+  assert.deepEqual(plan.map((step) => step.status), ['available', 'account', 'account', 'after', 'after']);
   for (const step of plan) assert.notEqual(describeStep(step).label, 'Voltooid');
 });
 
@@ -225,10 +234,10 @@ test('na een controle is alleen gedaan wat echt gedaan is', () => {
   ], { source, now: 5000 });
   const steps = publicRun({ breaches, source });
 
-  assert.deepEqual(steps.map((step) => step.status), ['done', 'planned', 'skipped', 'done', 'done']);
+  assert.deepEqual(steps.map((step) => step.status), ['done', 'skipped', 'skipped', 'done', 'done']);
   assert.equal(noteOf(steps, 'datalekken'), '2 datalekken gevonden bij XposedOrNot.');
-  // Databrokers bestaan nog niet en het web kan alleen in je eigen account: nooit voltooid.
-  assert.equal(describeStep(steps[1]).label, 'Nog niet gebouwd');
+  // Databrokers en het web kunnen alleen in je eigen account: op de startpagina nooit voltooid.
+  assert.equal(describeStep(steps[1]).label, 'Overgeslagen');
   assert.equal(describeStep(steps[2]).label, 'Overgeslagen');
   assert.match(noteOf(steps, 'web'), /alleen in je eigen account/);
   assert.match(noteOf(steps, 'blootstelling'), /inloggegevens \(in 1 lek\), telefoonnummers \(in 1 lek\)/);

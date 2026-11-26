@@ -9,6 +9,7 @@
 //
 // Niets hiervan wordt bewaard. De weergave rekent het bij elke keer opnieuw uit uit de titel en
 // het fragment die er toch al staan.
+import { brokerForUrl } from './brokers/registry.js';
 const DOT = '•';
 const MAX_PER_KIND = 2;
 
@@ -31,26 +32,27 @@ function parsePhone(piece) {
       return dutch(rest);
     }
     if (all.length < 8 || all.length > 14 || all.startsWith('0')) return null;
-    return { display: `+${DOT.repeat(2)} ${DOT.repeat(4)} ${all.slice(-4)}`, label: 'Telefoonnummer (buitenland)' };
+    return { display: `+${DOT.repeat(2)} ${DOT.repeat(4)} ${all.slice(-4)}`, label: 'Telefoonnummer (buitenland)', phone: `+${all}` };
   }
 
   if (digits.length === 10 && /^0[1-7]/.test(digits)) return dutch(digits.slice(1));
   return null;
 }
 
-// `rest` zijn de 9 cijfers na de 0 of de landcode.
+// `rest` zijn de 9 cijfers na de 0 of de landcode. `phone` is het hele nummer (+31...), alleen om te
+// vergelijken met je eigen bevestigde nummer; het komt niet op de pagina.
 function dutch(rest) {
   const last = rest.slice(-4);
   return rest.startsWith('6')
-    ? { display: `+31 6 ${DOT.repeat(4)} ${last}`, label: 'Telefoonnummer (mobiel)' }
-    : { display: `+31 ${DOT.repeat(2)} ${DOT.repeat(4)} ${last}`, label: 'Telefoonnummer (vast)' };
+    ? { display: `+31 6 ${DOT.repeat(4)} ${last}`, label: 'Telefoonnummer (mobiel)', phone: `+31${rest}` }
+    : { display: `+31 ${DOT.repeat(2)} ${DOT.repeat(4)} ${last}`, label: 'Telefoonnummer (vast)', phone: `+31${rest}` };
 }
 
 // Een rekeningnummer (IBAN) bestaat grotendeels uit cijfers en lijkt dan op een telefoonnummer:
 // "NL91 ABNA 0417 1643 00" eindigt op tien cijfers. Die halen we weg voordat we naar nummers zoeken.
 const IBAN = /\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,3})?\b/g;
 
-function phonesIn(text) {
+function phonesIn(text, ownPhone = null) {
   const found = [];
   // Reeksen cijfers met spaties, streepjes, punten en haakjes ertussen. Zo'n reeks kan meer zijn
   // dan één nummer (of een nummer met een jaartal ernaast), dus we zoeken per stuk, van lang naar kort.
@@ -62,7 +64,7 @@ function phonesIn(text) {
         hit = parsePhone(tokens.slice(start, end).join(' '));
         if (hit) start = end - 1;
       }
-      if (hit) found.push(hit);
+      if (hit) found.push({ ...hit, yours: Boolean(ownPhone) && hit.phone === ownPhone });
     }
   }
   return found;
@@ -99,10 +101,10 @@ function postcodesIn(text) {
 
 // Wat er in titel en fragment op persoonsgegevens lijkt: [{ kind, label, display, yours }].
 // `ownEmail` is het bevestigde e-mailadres van het account: komt dat voor, dan zeggen we dat.
-export function extractSignals({ title = '', snippet = '' } = {}, { ownEmail = null } = {}) {
+export function extractSignals({ title = '', snippet = '' } = {}, { ownEmail = null, ownPhone = null } = {}) {
   const text = `${title}\n${snippet}`;
   const groups = [
-    ['phone', phonesIn(text)],
+    ['phone', phonesIn(text, ownPhone)],
     ['email', emailsIn(text, ownEmail)],
     ['postcode', postcodesIn(text)],
   ];
@@ -110,7 +112,16 @@ export function extractSignals({ title = '', snippet = '' } = {}, { ownEmail = n
   for (const [kind, items] of groups) {
     const seen = new Set();
     for (const item of items) {
-      if (seen.has(item.display) || seen.size >= MAX_PER_KIND) continue;
+      // Twee nummers met dezelfde laatste cijfers zien er gemaskeerd hetzelfde uit; is één daarvan van jou,
+      // dan zeggen we dat.
+      if (seen.has(item.display)) {
+        if (item.yours) {
+          const earlier = result.find((signal) => signal.kind === kind && signal.display === item.display);
+          if (earlier) earlier.yours = true;
+        }
+        continue;
+      }
+      if (seen.size >= MAX_PER_KIND) continue;
       seen.add(item.display);
       result.push({ kind, label: item.label, display: item.display, yours: Boolean(item.yours) });
     }
@@ -152,7 +163,7 @@ export function classifyUrl(url) {
     return { type: 'web', label: 'Webpagina' };
   }
   const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
-  if (onDomain(host, PEOPLE_SEARCH)) return { type: 'broker', label: 'Mogelijke personenzoeksite of telefoongids' };
+  if (onDomain(host, PEOPLE_SEARCH) || brokerForUrl(parsed.href)) return { type: 'broker', label: 'Mogelijke personenzoeksite of telefoongids' };
   if (onDomain(host, SOCIAL)) return { type: 'social', label: 'Sociale media' };
   const file = parsed.pathname.match(DOCUMENT);
   if (file) return { type: 'document', label: `Openbaar document (${file[1].toUpperCase()})` };
@@ -160,9 +171,9 @@ export function classifyUrl(url) {
 }
 
 // Alles wat de pagina over één webresultaat wil laten zien, naast de titel en het fragment.
-export function describeWebResult(result, { ownEmail = null } = {}) {
+export function describeWebResult(result, { ownEmail = null, ownPhone = null } = {}) {
   return {
-    signals: extractSignals({ title: result.title, snippet: result.details?.snippet ?? result.snippet }, { ownEmail }),
+    signals: extractSignals({ title: result.title, snippet: result.details?.snippet ?? result.snippet }, { ownEmail, ownPhone }),
     site: classifyUrl(result.url),
   };
 }

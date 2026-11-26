@@ -157,7 +157,7 @@ test('een scan bewaart de resultaten als "nog te beoordelen" en toont ze met uit
   assert.match(html, /Gezocht: 3 mogelijke vermeldingen gevonden, waarvan 3 nieuw\. Beoordeel ze hieronder: het zegt niet dat ze over jou gaan\./);
   assert.match(html, /<span class="badge">3 mogelijke vermeldingen<\/span>/);
   // Het zijn mogelijke vermeldingen, geen vondsten: pas jouw "Dit ben ik" maakt er iets van jou van.
-  assert.match(html, /Dit zijn <strong>mogelijke<\/strong> vermeldingen van je naam, geen bewijs dat ze over jou gaan\./);
+  assert.match(html, /Dit zijn <strong>mogelijke<\/strong> vermeldingen van jou, geen bewijs dat ze over jou gaan\./);
   assert.match(html, /pas bij "Dit ben ik"\s+beschouwen we een resultaat als van jou/);
   assert.match(html, /Laatst gezocht op [^<]+ naar <code>&#34;Anna de Vries&#34;<\/code>/);
   assert.match(html, /Nog te beoordelen: 3\./);

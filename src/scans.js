@@ -1,5 +1,6 @@
 // Het eigenlijke zoeken: vraag het aan een dienst, bewaar wat er terugkomt.
 import { DEMO_CONFIDENCE, rateWebResult } from './confidence.js';
+import { classifyUrl } from './extract.js';
 import { recordScan, saveBreaches, saveWebResults } from './findings.js';
 import { WEB_RESULT_MS } from './retention.js';
 import { ScanError } from './scan-error.js';
@@ -12,8 +13,10 @@ export function searchSourceId(search) {
 
 // Een fout van de zoekdienst wordt een fout van het zoeken op het web. De codes beginnen met
 // "search_", zodat de melding over de zoekdienst gaat en niet over de bron van datalekken.
-const SEARCH_ERRORS = {
+export const SEARCH_ERRORS = {
   paused: 'search_paused',
+  budget: 'search_budget',
+  budget_scan: 'search_budget_scan',
   bad_key: 'search_bad_key',
   rate_limited: 'search_rate_limited',
   unavailable: 'search_unavailable',
@@ -65,14 +68,23 @@ export async function scanWeb({ db, user, search, allowed = true, now = Date.now
   const rate = (result) => (search.isDemo
     ? DEMO_CONFIDENCE
     : rateWebResult({
-      name: user.name, city: user.city, email: user.email, title: result.title, snippet: result.snippet,
+      name: user.name,
+      city: user.city,
+      email: user.email,
+      phone: user.phone_verified_at ? (user.phone ?? null) : null, // alleen een bevestigd nummer
+      title: result.title,
+      snippet: result.snippet,
     }));
 
   // Staat de dienst niet toe dat we resultaten bewaren, dan blijven ze maar even staan (zie
   // retention.js). Weet de app dat niet zeker, dan gaan we uit van niet toegestaan.
   const expiresAt = search.retainsResults === true ? null : now + WEB_RESULT_MS;
 
-  const added = saveWebResults(db, user.id, results, now, { sourceId, rate, expiresAt });
+  const added = saveWebResults(db, user.id, results, now, {
+    sourceId, rate, expiresAt, via: 'naam', category: (result) => classifyUrl(result.url).type,
+  });
   recordScan(db, user.id, 'web', results.length, added, query, now);
-  return { found: results.length, added, query, expiresAt };
+  return {
+    found: results.length, added, query, expiresAt, results,
+  };
 }

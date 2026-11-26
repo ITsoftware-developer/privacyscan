@@ -1,0 +1,27 @@
+<%- include('partials/head', { title: 'Testpostvak voor sms' }) %>
+
+<section class="card prose">
+  <h1>Testpostvak voor sms</h1>
+  <p class="lead">
+    Alleen voor op je eigen computer. Er is nog geen sms-dienst gekoppeld, dus de sms'jes die de app
+    verstuurt, komen hier terecht in plaats van op een telefoon. Ze verdwijnen als je de server herstart.
+  </p>
+
+  <% if (messages.length === 0) { %>
+    <p>Nog geen sms'jes.</p>
+  <% } %>
+
+  <% for (const message of messages) { %>
+    <article class="mail">
+      <dl class="facts">
+        <dt>Aan</dt><dd><%= formatPhone(message.to) %></dd>
+        <dt>Verstuurd</dt><dd><%= new Date(message.sentAt).toLocaleTimeString('nl-NL') %></dd>
+      </dl>
+      <p class="mail-text"><%= message.text %></p>
+    </article>
+  <% } %>
+
+  <p><a href="/profiel#telefoon">Terug naar je zoekgegevens</a></p>
+</section>
+
+<%- include('partials/foot') %>

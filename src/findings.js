@@ -81,8 +81,28 @@ export function saveBreaches(db, userId, breaches, now = Date.now()) {
 //               (zie confidence.js). Bij een nieuwe zoekronde wordt dat opnieuw beoordeeld, want je
 //               woonplaats kan veranderd zijn.
 //   expiresAt   tot wanneer we de resultaten mogen bewaren (ms), of null: zolang je account bestaat
+// `evidence` zegt waar de resultaten vandaan komen:
+//   sourceId   de zoekdienst (brave, demo)
+//   rate       hoe zeker is het dat een resultaat over jou gaat (zie confidence.js)
+//   expiresAt  tot wanneer het mag blijven staan (zie retention.js)
+//   category   wat voor soort site (broker, social, document, web), als functie van het resultaat
+//   via        met welk gegeven het gevonden is: naam, telefoon of e-mail. Vindt een volgende zoekopdracht
+//              hetzelfde adres met een ander gegeven, dan komt dat erbij (zie research/).
 export function saveWebResults(db, userId, results, now = Date.now(), evidence = {}) {
-  const { sourceId = null, rate = null, expiresAt = null } = evidence;
+  const {
+    sourceId = null, rate = null, expiresAt = null, category = null, via = null,
+  } = evidence;
+  const earlier = db.prepare(`SELECT details FROM findings WHERE user_id = ? AND kind = 'web' AND source_key = ? AND ${LIVE}`);
+  const viaOf = (url) => {
+    const row = earlier.get(userId, url, now);
+    if (!row) return [];
+    try {
+      const list = JSON.parse(row.details).via;
+      return Array.isArray(list) ? list.filter((item) => typeof item === 'string') : [];
+    } catch {
+      return [];
+    }
+  };
   return inTransaction(db, () => {
     const live = new Set(db
       .prepare(`SELECT source_key FROM findings WHERE user_id = ? AND kind = 'web' AND ${LIVE}`)
@@ -110,8 +130,11 @@ export function saveWebResults(db, userId, results, now = Date.now(), evidence =
       const { title, url, snippet } = result;
       const rating = rate ? rate(result) : null;
       const choice = choices.get(webKey(url));
+      const details = { snippet };
+      if (category) details.category = category(result);
+      if (via) details.via = [...new Set([...viaOf(url), via])];
       upsert.run(
-        userId, url, title, url, JSON.stringify({ snippet }), choice ?? 'new', now, now,
+        userId, url, title, url, JSON.stringify(details), choice ?? 'new', now, now,
         sourceId, rating?.level ?? null, rating?.note ?? null, now, expiresAt,
       );
       if (!live.has(url) && choice === undefined) added += 1;
@@ -129,6 +152,18 @@ export function limitRetention(db, sourceId, now = Date.now()) {
     .prepare("UPDATE findings SET expires_at = ? WHERE kind = 'web' AND source_id = ? AND expires_at IS NULL")
     .run(now + WEB_RESULT_MS, sourceId);
   return Number(result.changes);
+}
+
+// Met welk gegeven een webresultaat gevonden is (details.via), voor in de pagina's.
+export const VIA_LABELS = { naam: 'je naam', telefoon: 'je telefoonnummer', 'e-mail': 'je e-mailadres' };
+
+// "je naam en je telefoonnummer", of null als er niets (bekends) in de lijst staat. Een onbekende waarde
+// (bijvoorbeeld uit een kapotte database) laten we weg; we verzinnen er geen tekst bij.
+export function viaText(list) {
+  const known = (Array.isArray(list) ? list : []).filter((item) => typeof item === 'string' && Object.hasOwn(VIA_LABELS, item));
+  const labels = [...new Set(known)].map((item) => VIA_LABELS[item]);
+  if (labels.length === 0) return null;
+  return labels.length === 1 ? labels[0] : `${labels.slice(0, -1).join(', ')} en ${labels.at(-1)}`;
 }
 
 // Alle resultaten van één gebruiker: datalekken (nieuwste lek eerst) en webresultaten.
