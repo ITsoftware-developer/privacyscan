@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { BREACH_CONFIDENCE } from './confidence.js';
+import { pruneEvents } from './events.js';
 import { webKey } from './retention.js';
 
 export function openDatabase(path) {
@@ -95,11 +96,42 @@ export function openDatabase(path) {
       steps    TEXT    NOT NULL,                -- de stappen, als JSON
       exposure TEXT    NOT NULL DEFAULT '[]'    -- de blootgestelde soorten gegevens, als JSON
     );
+
+    -- Voor de beheerpagina: hoeveel aanvragen de site per dag naar elke externe dienst stuurde, en
+    -- hoeveel daarvan mislukten. Alleen tellers: geen adressen, zoekopdrachten of e-mailadressen.
+    CREATE TABLE IF NOT EXISTS api_usage (
+      service TEXT    NOT NULL,             -- brave, xon, hibp of pwned-passwords (zie services.js)
+      day     TEXT    NOT NULL,             -- de dag in UTC, als 2026-11-26
+      calls   INTEGER NOT NULL DEFAULT 0,
+      errors  INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (service, day)
+    );
+
+    -- Het systeemlog van de beheerpagina: vaste meldingen met alleen getallen en vaste woorden als
+    -- details (zie events.js). Blijft hooguit 30 dagen.
+    CREATE TABLE IF NOT EXISTS system_events (
+      id     INTEGER PRIMARY KEY,
+      at     INTEGER NOT NULL,
+      level  TEXT    NOT NULL CHECK (level IN ('info', 'warn', 'error')),
+      code   TEXT    NOT NULL,
+      detail TEXT    NOT NULL DEFAULT '{}'
+    );
+    CREATE INDEX IF NOT EXISTS system_events_at ON system_events (at);
+
+    -- Instellingen die de beheerder op de beheerpagina verandert, zoals een bron pauzeren. Sleutels
+    -- en wachtwoorden staan hier nooit: die blijven in .env.
+    CREATE TABLE IF NOT EXISTS settings (
+      key        TEXT    PRIMARY KEY,
+      value      TEXT    NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
   `);
 
   // Een database uit fase 1 heeft de twee nieuwe kolommen van users nog niet.
   addColumn(db, 'users', 'email_confirmed_at', 'INTEGER');
   addColumn(db, 'users', 'city', 'TEXT');
+  // Geblokkeerd door de beheerder (bij misbruik). Leeg = niet geblokkeerd.
+  addColumn(db, 'users', 'blocked_at', 'INTEGER');
 
   // Bij elke bevinding: uit welke bron, hoe zeker, en wanneer het voor het laatst is onderzocht
   // (anders dan updated_at, dat ook verandert als jij een keuze maakt).
@@ -150,13 +182,19 @@ export function inTransaction(db, work) {
 }
 
 // Wist verlopen sessies, bevestigingslinks, tellers en webresultaten die niet langer bewaard mogen
-// worden. server.js roept dit elke minuut aan.
+// worden, en oude regels uit het systeemlog en de verbruikstellers. server.js roept dit elke minuut aan.
 export function removeExpired(db, now = Date.now()) {
   db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(now);
   db.prepare('DELETE FROM email_confirmations WHERE expires_at <= ?').run(now);
   db.prepare('DELETE FROM rate_limits WHERE reset_at <= ?').run(now);
   db.prepare('DELETE FROM findings WHERE expires_at IS NOT NULL AND expires_at <= ?').run(now);
+  pruneEvents(db, now);
+  db.prepare('DELETE FROM api_usage WHERE day < ?')
+    .run(new Date(now - USAGE_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
 }
+
+// Hoe lang de tellers van het verbruik blijven: ruim een jaar, om maanden te kunnen vergelijken.
+export const USAGE_DAYS = 400;
 
 // Wist alles wat de demo-zoekdienst verzonnen heeft: de nepresultaten, de keuzes die je daarbij
 // maakte, de laatste webzoekopdracht en een Deep Scan-rapport waar demo-resultaten in staan.

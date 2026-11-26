@@ -173,6 +173,10 @@ export function createXon({
   }
 
   return {
+    // Voor de beheerpagina: hoe de koppeling is ingesteld. (De dienst zelf staat 25 controles per
+    // uur en 100 per dag toe, voor de hele site.)
+    settings: { minIntervalMs, timeoutMs, perHour: 25, perDay: 100 },
+
     // Hoeveel lekken staan er in de lijst van XposedOrNot? Voor `npm run controleer`: zo weten we
     // ook dat de lijst te lezen is als het adres dat je controleert in geen enkel lek staat (de
     // lijst halen we anders alleen op als er iets gevonden is).

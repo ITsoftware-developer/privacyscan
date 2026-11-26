@@ -17,8 +17,10 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { isValidEmail, normalizeEmail } from './email.js';
 import { publicPlan, publicRun, withEvidence } from './engine.js';
+import { logEvent } from './events.js';
 import { breachLink } from './findings.js';
 import { SqliteStore } from './limit-store.js';
+import { createMonitor } from './monitor.js';
 import { ScanError } from './scan-error.js';
 import { PHASES, describeRegister, sourceById } from './sources.js';
 
@@ -39,6 +41,7 @@ function problemsFor(source) {
     busy: [429, 'Er lopen al veel controles tegelijk. Probeer het over een minuutje opnieuw.'],
     unavailable: [502, `${source.name} is nu niet bereikbaar. Probeer het later nog eens.`],
     unexpected: [502, `${source.name} gaf een onverwacht antwoord. Probeer het later nog eens.`],
+    paused: [503, 'De controle staat tijdelijk uit. Probeer het later nog eens.'],
   };
 }
 
@@ -54,7 +57,7 @@ const TOO_OFTEN = 'Je hebt het afgelopen uur al een paar keer gecontroleerd. Pro
 
 const newestFirst = (a, b) => String(b.breachDate ?? '').localeCompare(String(a.breachDate ?? ''));
 
-export function createPublicRoutes({ db, hibp, search = null, checkLimit }) {
+export function createPublicRoutes({ db, hibp, search = null, checkLimit, monitor = createMonitor(db) }) {
   const router = Router();
 
   // Naar welke bron(nen) gaan de adressen van bezoekers? Dat staat op de pagina.
@@ -90,12 +93,15 @@ export function createPublicRoutes({ db, hibp, search = null, checkLimit }) {
     standardHeaders: false,
     legacyHeaders: false,
     store: new SqliteStore(db, 'check-ip:'),
-    handler: (req, res) => page(res, {
-      status: 429,
-      noStore: true,
-      email: normalizeEmail(req.body?.email),
-      error: TOO_OFTEN,
-    }),
+    handler: (req, res) => {
+      logEvent(db, 'limit_reached', { what: 'check' });
+      page(res, {
+        status: 429,
+        noStore: true,
+        email: normalizeEmail(req.body?.email),
+        error: TOO_OFTEN,
+      });
+    },
   });
 
   // De startpagina is de controle zelf. Wie is ingelogd, gaat naar zijn dashboard.
@@ -139,15 +145,19 @@ export function createPublicRoutes({ db, hibp, search = null, checkLimit }) {
 
     if (!hibp.hasKeyFor(email)) return problem('no_key');
 
+    // In het systeemlog komen alleen de aantallen en de duur, nooit het adres.
     let breaches;
+    const started = Date.now();
     try {
-      breaches = await hibp.breachesFor(email);
+      breaches = await monitor.track('check', () => hibp.breachesFor(email));
     } catch (error) {
       if (!(error instanceof ScanError)) throw error;
+      logEvent(db, 'scan_failed', { scan: 'check', code: error.code });
       const note = forTheOwner(error.code, source);
       if (note) console.error(note);
       return problem(error.code);
     }
+    logEvent(db, 'scan_done', { scan: 'check', found: breaches.length, ms: Date.now() - started });
 
     const visible = withEvidence(
       breaches

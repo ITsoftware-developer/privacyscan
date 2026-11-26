@@ -29,7 +29,10 @@ test('openDatabase maakt de map, het bestand en de tabellen aan', () => {
     db.close();
 
     assert.ok(existsSync(path));
-    assert.deepEqual(tables, ['email_confirmations', 'findings', 'rate_limits', 'scan_runs', 'scans', 'sessions', 'users', 'web_choices']);
+    assert.deepEqual(tables, [
+      'api_usage', 'email_confirmations', 'findings', 'rate_limits', 'scan_runs', 'scans', 'sessions', 'settings',
+      'system_events', 'users', 'web_choices',
+    ]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -59,12 +62,14 @@ test('een database uit fase 1 wordt bijgewerkt, zonder gegevens te verliezen', (
     const columns = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
     assert.ok(columns.includes('email_confirmed_at'));
     assert.ok(columns.includes('city'));
+    assert.ok(columns.includes('blocked_at'));
 
     const user = db.prepare('SELECT * FROM users').get();
     assert.equal(user.email, 'anna@example.com');
     assert.equal(user.created_at, 123);
     assert.equal(user.email_confirmed_at, null); // nog niet bevestigd
     assert.equal(user.city, null);
+    assert.equal(user.blocked_at, null); // een bestaand account is niet geblokkeerd
     db.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });

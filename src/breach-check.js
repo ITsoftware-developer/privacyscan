@@ -39,6 +39,9 @@ export function createBreachCheck({ hibp, xon = null }) {
     // Naar welke bron gaan de adressen van gewone bezoekers? Voor de privacyverklaring.
     emailSources: hibp.hasKey || !xon ? ['hibp'] : ['xon'],
 
+    // De koppelingen zelf, voor de testknoppen en de instellingen op de beheerpagina.
+    adapters: { hibp, xon },
+
     // Geeft de datalekken waarin dit adres voorkomt (een lege lijst als het nergens in staat).
     breachesFor(email) {
       return (sourceFor(email) === 'xon' ? xon : hibp).breachesFor(email);

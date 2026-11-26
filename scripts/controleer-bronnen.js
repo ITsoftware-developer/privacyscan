@@ -11,32 +11,11 @@
 // XposedOrNot. Daarmee gebruik je een heel klein deel van je tegoed en van de gratis limiet.
 // Het script print nooit je sleutel, en nooit een zoekopdracht met je naam of je e-mailadres.
 import { pathToFileURL } from 'node:url';
-import { ScanError } from '../src/scan-error.js';
+import {
+  BRAVE_PROBLEMS, EXAMPLE_ADDRESS, NEUTRAL_QUERY, XON_PROBLEMS, explain,
+} from '../src/probes.js';
 import { cleanResults, createBraveSearch } from '../src/search.js';
 import { createXon } from '../src/xon.js';
-
-// Een zoekopdracht waar elke zoekmachine resultaten bij geeft.
-const NEUTRAL_QUERY = '"Domtoren" "Utrecht"';
-// Een adres dat nergens bij hoort: voor als je geen eigen adres meegeeft.
-const EXAMPLE_ADDRESS = 'controle@example.com';
-
-const BRAVE_PROBLEMS = {
-  bad_key: 'Brave weigert de sleutel (HTTP 401 of 403). Controleer BRAVE_API_KEY in je .env: de sleutel van je Search-abonnement, zonder aanhalingstekens of spaties.',
-  rate_limited: 'Brave staat geen aanvragen meer toe (HTTP 402 of 429): het tegoed of de limiet is op, of er is geen betaalmethode ingesteld op je Brave-account.',
-  unavailable: 'Brave is niet bereikbaar: geen internet, een firewall of een storing bij Brave.',
-  unexpected: 'Brave gaf een antwoord dat de koppeling niet kan lezen. Dan past de koppeling misschien niet meer bij de dienst: meld dit, samen met de regel hierboven.',
-};
-
-const XON_PROBLEMS = {
-  rate_limited: 'XposedOrNot staat geen aanvragen meer toe: de gratis limiet (25 per uur, 100 per dag) is bereikt. Probeer het later nog eens.',
-  unavailable: 'XposedOrNot is niet bereikbaar: geen internet, een firewall of een storing.',
-  unexpected: 'XposedOrNot gaf een antwoord dat de koppeling niet kan lezen. Dan past de koppeling misschien niet meer bij de dienst: meld dit, samen met de regel hierboven.',
-};
-
-function explain(error, problems) {
-  if (error instanceof ScanError) return problems[error.code] ?? problems.unexpected;
-  return `Onverwachte fout: ${String(error?.message ?? error).split('\n')[0].slice(0, 200)}`;
-}
 
 // De tellers die Brave bij een antwoord meegeeft ("aanvragen over"), als het getallen zijn.
 function limitsFrom(headers) {

@@ -162,8 +162,9 @@
       <% if (!searchPolicy.configured) { %>
         <p class="alert alert-warning card-alert" role="note">
           <strong>Er is geen zoekdienst ingesteld.</strong> We zoeken daarom niet op het web, en verzinnen
-          ook niets. Zet <code>BRAVE_API_KEY</code> in je <code>.env</code> (zie de README) en start de
-          site opnieuw.
+          ook niets. Zet <code>BRAVE_API_KEY</code> in je <code>.env</code> (zie de README). Staat hij er
+          al in? Start de site dan opnieuw (Ctrl+C en <code>npm start</code>): hij leest <code>.env</code>
+          alleen bij het starten.
         </p>
       <% } else { %>
         <p class="hint">

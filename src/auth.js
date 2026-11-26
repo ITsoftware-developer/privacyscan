@@ -31,7 +31,7 @@ export const DUMMY_HASH = await hashPassword(randomBytes(32).toString('hex'));
 // uit, dan kan niemand met die gegevens inloggen.
 
 export const COOKIE_NAME = 'sessie';
-const SESSION_DAYS = 7;
+export const SESSION_DAYS = 7;
 
 function hashToken(token) {
   return createHash('sha256').update(token).digest('hex');
@@ -48,13 +48,15 @@ export function createSession(db, userId) {
   return { token, expiresAt };
 }
 
+// Een geblokkeerd account (zie admin.js) heeft geen geldige sessie meer, ook niet als de cookie er
+// nog is: blokkeren werkt meteen.
 export function findSessionUser(db, token) {
   if (!token) return null;
   const user = db.prepare(`
     SELECT users.id, users.name, users.email, users.created_at,
            users.email_confirmed_at, users.city
     FROM sessions JOIN users ON users.id = sessions.user_id
-    WHERE sessions.id = ? AND sessions.expires_at > ?
+    WHERE sessions.id = ? AND sessions.expires_at > ? AND users.blocked_at IS NULL
   `).get(hashToken(token), Date.now());
   return user ?? null;
 }

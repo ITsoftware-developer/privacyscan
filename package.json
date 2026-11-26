@@ -1,6 +1,6 @@
 {
   "name": "privacyscan",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Je eigen privacy-tool: wat weet het internet over jou? Zoekt en toont wat er over jou te vinden is, nu in bekende datalekken en (met een zoekdienst) op het web, met bron, datum en zekerheid bij elke bevinding. Verwijdert niets, en verzint niets.",
   "private": true,
   "type": "module",

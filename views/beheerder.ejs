@@ -1,0 +1,359 @@
+<%- include('partials/head', { title: 'Beheer' }) %>
+<% const scanLabels = { breach: 'Datalekcontrole', web: 'Webzoekopdracht', deep: 'Deep Scan', check: 'Openbare e-mailcontrole' }; %>
+<% const toneOf = { error: 'bad', warn: 'warn', info: 'idle' }; %>
+
+<section class="welcome">
+  <h1>Beheer</h1>
+  <p class="lead">
+    Het technische controlecentrum van de site. Alleen jij ziet deze pagina. Namen, woonplaatsen,
+    zoekopdrachten en wat er over iemand gevonden is, staan hier bewust niet op.
+  </p>
+</section>
+
+<% if (notice) { %>
+  <p class="alert alert-ok notice-top" role="status"><%= notice %></p>
+<% } %>
+
+<ul class="admin-nav" aria-label="Onderdelen">
+  <li><a href="#status">Systeemstatus</a></li>
+  <li><a href="#bronnen">Databronnen</a></li>
+  <li><a href="#verbruik">API-verbruik</a></li>
+  <li><a href="#onderzoeken">Onderzoeken</a></li>
+  <li><a href="#log">Systeemlog</a></li>
+  <li><a href="#accounts">Accounts</a></li>
+  <li><a href="#instellingen">Scannerinstellingen</a></li>
+  <li><a href="#nog-niet">Nog niet gebouwd</a></li>
+</ul>
+
+<div class="admin">
+
+  <article class="card" id="status">
+    <h2>Systeemstatus</h2>
+    <% if (status.searchMissing) { %>
+      <p class="alert alert-warning card-alert" role="note">
+        <strong>Geen zoekdienst.</strong> De site is op <%= formatDateTime(status.startedAt) %> gestart zonder
+        <code>BRAVE_API_KEY</code>. Staat de sleutel al in je <code>.env</code>? Start de site dan opnieuw
+        (Ctrl+C en <code>npm start</code>): hij leest <code>.env</code> alleen bij het starten.
+      </p>
+    <% } %>
+    <% if (status.production) { %>
+      <p class="alert alert-warning card-alert" role="note">
+        <strong>Tweestapsverificatie bestaat nog niet.</strong> Wie jouw wachtwoord heeft, komt op deze pagina.
+        Zet de site niet echt openbaar voordat die er is.
+      </p>
+    <% } %>
+    <dl class="facts">
+      <dt>Gestart</dt><dd><%= formatDateTime(status.startedAt) %> (draait <%= fmt.duration(status.uptime) %>)</dd>
+      <dt>Modus</dt><dd><%= status.mode %></dd>
+      <dt>Node.js</dt><dd><%= status.node %></dd>
+      <dt>Zoekdienst</dt><dd><%= status.search %></dd>
+      <dt>Datalekken</dt><dd><%= status.breaches %></dd>
+      <dt>Mail</dt><dd><%= status.mail %></dd>
+      <dt>Database</dt>
+      <dd>
+        SQLite <%= status.database.version %>, <%= fmt.bytes(status.database.bytes) %>,
+        <%= fmt.count(status.database.sessions, 'open sessie', 'open sessies') %>, <%= fmt.count(status.database.events, 'melding', 'meldingen') %> in het log
+      </dd>
+      <dt>Bevindingen</dt>
+      <dd>
+        <%= fmt.number(totals.breaches) %> datalekken, <%= fmt.number(totals.web) %> webresultaten,
+        <%= fmt.number(totals.choices) %> keuzes van gebruikers bij webresultaten
+      </dd>
+      <dt>Afgelopen 24 uur</dt>
+      <dd><%= fmt.count(eventCounts.error, 'fout', 'fouten') %> en <%= fmt.count(eventCounts.warn, 'melding', 'meldingen') %> om op te letten (zie <a href="#log">het log</a>)</dd>
+    </dl>
+    <p class="hint">De instellingen uit <code>.env</code> leest de site alleen bij het starten. Pas je iets aan, start de site dan opnieuw.</p>
+  </article>
+
+  <article class="card" id="bronnen">
+    <h2>Databronnen</h2>
+    <div class="admin-scroll">
+      <table class="admin-table">
+        <thead>
+          <tr><th>Bron</th><th>Toestand</th><th>Laatste aanvraag</th><th>Laatste test</th><th>Acties</th></tr>
+        </thead>
+        <tbody>
+          <% sources.forEach((source) => { %>
+            <tr>
+              <td><strong><%= source.name %></strong><br><span class="muted"><%= source.use %></span></td>
+              <td>
+                <span class="state state-<%= source.tone %>"><%= source.stateLabel %></span>
+                <% if (source.pausedSince) { %><br><span class="muted">sinds <%= formatDateTime(source.pausedSince) %></span><% } %>
+                <br><span class="muted"><%= source.note %></span>
+              </td>
+              <td>
+                <% if (source.live && source.live.lastAt) { %>
+                  <%= formatDateTime(source.live.lastAt) %><br>
+                  <span class="muted">
+                    <%= source.live.lastOk ? 'Gelukt' : 'Mislukt' %><% if (source.live.lastStatus) { %> (HTTP <%= source.live.lastStatus %>)<% } %>,
+                    <%= fmt.ms(source.live.lastMs) %>
+                  </span>
+                <% } else { %>
+                  <span class="muted">Nog geen, sinds de start</span>
+                <% } %>
+              </td>
+              <td>
+                <% if (source.live && source.live.test) { %>
+                  <span class="state state-<%= source.live.test.ok ? 'ok' : 'bad' %>"><%= source.live.test.ok ? 'Gelukt' : 'Mislukt' %></span>
+                  <span class="muted"><%= formatDateTime(source.live.test.at) %></span><br>
+                  <%= source.live.test.text %>
+                <% } else { %>
+                  <span class="muted">Nog niet getest</span>
+                <% } %>
+              </td>
+              <td>
+                <div class="admin-actions">
+                  <% if (source.canTest) { %>
+                    <form method="post" action="/beheerder/bronnen/<%= source.id %>/test">
+                      <button type="submit" class="button button-quiet button-small">Testen</button>
+                    </form>
+                  <% } %>
+                  <% if (source.canPause) { %>
+                    <form method="post" action="/beheerder/bronnen/<%= source.id %>/pauze">
+                      <input type="hidden" name="actie" value="<%= source.state === 'gepauzeerd' ? 'hervatten' : 'pauzeren' %>">
+                      <button type="submit" class="button button-quiet button-small"><%= source.state === 'gepauzeerd' ? 'Weer aanzetten' : 'Pauzeren' %></button>
+                    </form>
+                  <% } %>
+                </div>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+    <p class="hint">
+      Een test is een echte aanvraag, met een neutrale zoekopdracht of een voorbeeldadres en nooit met gegevens
+      van een gebruiker. Bij Brave kost een test tegoed. Een bron op pauze krijgt geen aanvragen meer; wie zoekt,
+      hoort dat de bron tijdelijk uit staat. <a href="/bronnen">Het volledige bronnenregister</a>
+    </p>
+  </article>
+
+  <article class="card" id="verbruik">
+    <h2>API-verbruik</h2>
+    <div class="admin-scroll">
+      <table class="admin-table">
+        <thead>
+          <tr><th>Dienst</th><th class="num">Vandaag</th><th class="num">Deze maand</th><th class="num">Vorige maand</th></tr>
+        </thead>
+        <tbody>
+          <% usage.services.forEach((service) => { %>
+            <tr>
+              <td><%= service.name %></td>
+              <% [service.today, service.month, service.previousMonth].forEach((bucket) => { %>
+                <td class="num">
+                  <%= fmt.number(bucket.calls) %><% if (bucket.errors > 0) { %> <span class="muted">(<%= fmt.number(bucket.errors) %> mislukt)</span><% } %>
+                </td>
+              <% }) %>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+    <p class="hint">Aanvragen die deze site zelf stuurde, per dag in UTC (vandaag is <%= usage.today %>).</p>
+
+    <h3>Brave Search: limieten en kosten</h3>
+    <% if (usage.brave.limits) { %>
+      <ul class="plain-list">
+        <% usage.brave.limits.forEach((limit) => { %>
+          <li>
+            <%= fmt.windowLabel(limit.window) %>: nog <strong><%= fmt.number(limit.remaining) %></strong><% if (limit.limit !== null) { %> van <%= fmt.number(limit.limit) %><% } %><% if (limit.reset !== null && limit.window !== 1) { %>, begint opnieuw over <%= fmt.duration(limit.reset * 1000) %><% } %>
+          </li>
+        <% }) %>
+      </ul>
+      <p class="hint">Zo meldde Brave het bij de laatste aanvraag, op <%= formatDateTime(usage.brave.limitsAt) %>.</p>
+    <% } else { %>
+      <p class="card-text">Brave heeft sinds de start nog geen limieten gemeld. Dat doet Brave bij elk antwoord: doe een test of een zoekopdracht.</p>
+    <% } %>
+    <p class="card-text">
+      Geslaagde aanvragen deze kalendermaand: <strong><%= fmt.number(usage.brave.successful) %></strong>.
+      Schatting: <%= fmt.usd(usage.brave.cost.usd) %> ($<%= usage.brave.price.perThousandUsd %> per 1.000 aanvragen),
+      na het gratis tegoed van $<%= usage.brave.price.monthlyCreditUsd %> per maand: <strong><%= fmt.usd(usage.brave.cost.afterCreditUsd) %></strong>.
+    </p>
+    <p class="hint">
+      Prijzen van Brave in <%= usage.brave.price.checked %>; Brave rekent alleen geslaagde aanvragen. Je echte rekening
+      staat in je Brave-dashboard. AI-verbruik: er is nog geen AI-model gekoppeld, dus dat is nul.
+    </p>
+  </article>
+
+  <article class="card" id="onderzoeken">
+    <h2>Onderzoeken</h2>
+    <h3>Nu bezig</h3>
+    <% if (running.length === 0) { %>
+      <p class="card-text">Er loopt op dit moment geen onderzoek.</p>
+    <% } else { %>
+      <ul class="plain-list">
+        <% running.forEach((run) => { %>
+          <li><%= scanLabels[run.scan] ?? 'Onderzoek' %>, bezig sinds <%= fmt.duration(now - run.startedAt) %></li>
+        <% }) %>
+      </ul>
+    <% } %>
+    <p class="hint">Er is nog geen wachtrij op de achtergrond: een onderzoek loopt zolang het verzoek duurt, meestal een paar seconden.</p>
+
+    <h3>Laatste Deep Scans</h3>
+    <% if (runs.length === 0) { %>
+      <p class="card-text">Nog geen.</p>
+    <% } else { %>
+      <div class="admin-scroll">
+        <table class="admin-table">
+          <thead><tr><th>Wanneer</th><th>Account</th><th>Stappen</th></tr></thead>
+          <tbody>
+            <% runs.forEach((run) => { %>
+              <tr>
+                <td><%= formatDateTime(run.ranAt) %></td>
+                <td>#<%= run.account %></td>
+                <td>
+                  <div class="admin-steps">
+                    <% run.steps.forEach((step) => { %>
+                      <span class="state state-<%= step.tone %>"><%= step.title %>: <%= step.label %></span>
+                    <% }) %>
+                  </div>
+                  <span class="muted"><%= run.done %> van <%= run.steps.length %> voltooid</span>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+
+    <h3>Laatste losse scans</h3>
+    <% if (scans.length === 0) { %>
+      <p class="card-text">Nog geen.</p>
+    <% } else { %>
+      <div class="admin-scroll">
+        <table class="admin-table">
+          <thead><tr><th>Wanneer</th><th>Account</th><th>Soort</th><th class="num">Gevonden</th><th class="num">Nieuw</th></tr></thead>
+          <tbody>
+            <% scans.forEach((scan) => { %>
+              <tr>
+                <td><%= formatDateTime(scan.ran_at) %></td>
+                <td>#<%= scan.user_id %></td>
+                <td><%= scanLabels[scan.kind] ?? scan.kind %></td>
+                <td class="num"><%= fmt.number(scan.found_count) %></td>
+                <td class="num"><%= fmt.number(scan.new_count) %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+    <p class="hint">Per account bewaart de site alleen de laatste scan van elke soort. Wat er gevonden is, staat hier niet: alleen de aantallen.</p>
+  </article>
+
+  <article class="card" id="log">
+    <header class="card-head">
+      <h2>Systeemlog</h2>
+      <% if (onlyProblems) { %>
+        <a href="/beheerder#log">Alles tonen</a>
+      <% } else { %>
+        <a href="/beheerder?log=problemen#log">Alleen problemen</a>
+      <% } %>
+    </header>
+    <% if (events.length === 0) { %>
+      <p class="card-text"><%= onlyProblems ? 'Geen problemen in het log.' : 'Het log is nog leeg.' %></p>
+    <% } else { %>
+      <div class="admin-scroll">
+        <table class="admin-table">
+          <thead><tr><th>Wanneer</th><th>Soort</th><th>Melding</th></tr></thead>
+          <tbody>
+            <% events.forEach((event) => { %>
+              <tr>
+                <td><%= formatDateTime(event.at) %></td>
+                <td><span class="state state-<%= toneOf[event.level] ?? 'idle' %>"><%= event.levelLabel %></span></td>
+                <td><%= event.text %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+    <p class="hint">
+      De nieuwste 60 meldingen. Er staan geen namen, e-mailadressen, zoekopdrachten, webadressen of sleutels in.
+      Het log blijft hooguit 30 dagen. De volledige foutmeldingen staan alleen in de terminal van de server.
+    </p>
+  </article>
+
+  <article class="card" id="accounts">
+    <h2>Accounts</h2>
+    <dl class="facts">
+      <dt>Totaal</dt><dd><%= fmt.number(overview.counts.total) %></dd>
+      <dt>Bevestigd</dt><dd><%= fmt.number(overview.counts.confirmed) %> (nog niet bevestigd: <%= fmt.number(overview.counts.unconfirmed) %>)</dd>
+      <dt>Geblokkeerd</dt><dd><%= fmt.number(overview.counts.blocked) %></dd>
+      <dt>Nieuw, laatste 7 dagen</dt><dd><%= fmt.number(overview.counts.recent) %></dd>
+    </dl>
+    <div class="admin-scroll">
+      <table class="admin-table">
+        <thead>
+          <tr><th>Nr.</th><th>E-mailadres</th><th>Aangemeld</th><th>Bevestigd</th><th>Laatst gezocht</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>
+          <% overview.accounts.forEach((account) => { %>
+            <tr>
+              <td>#<%= account.id %></td>
+              <td><%= account.email %></td>
+              <td><%= formatDateTime(account.created_at) %></td>
+              <td><%= account.email_confirmed_at ? 'Ja' : 'Nee' %></td>
+              <td><%= account.last_scan_at ? formatDateTime(account.last_scan_at) : '–' %></td>
+              <td>
+                <% if (account.blocked_at) { %>
+                  <span class="state state-bad">Geblokkeerd</span>
+                <% } else if (account.id === meId) { %>
+                  <span class="state state-ok">Jij (beheerder)</span>
+                <% } else { %>
+                  <span class="state state-ok">Actief</span>
+                <% } %>
+              </td>
+              <td>
+                <% if (account.id !== meId) { %>
+                  <form method="post" action="/beheerder/accounts/<%= account.id %>/<%= account.blocked_at ? 'deblokkeren' : 'blokkeren' %>">
+                    <button type="submit" class="button button-quiet button-small"><%= account.blocked_at ? 'Deblokkeren' : 'Blokkeren' %></button>
+                  </form>
+                <% } %>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+    <% if (overview.shown < overview.counts.total) { %>
+      <p class="hint">De nieuwste <%= overview.shown %> van <%= fmt.number(overview.counts.total) %> accounts.</p>
+    <% } %>
+    <p class="hint">
+      Blokkeren is voor misbruik: het account kan niet meer inloggen en is meteen uitgelogd. Er wordt niets gewist.
+      Wil iemand met een geblokkeerd account zijn gegevens laten wissen, deblokkeer het dan, zodat hij zijn account
+      zelf kan verwijderen.
+    </p>
+  </article>
+
+  <article class="card" id="instellingen">
+    <h2>Scannerinstellingen</h2>
+    <dl class="facts">
+      <% settings.forEach((row) => { %>
+        <dt><%= row.label %></dt><dd><%= row.value %></dd>
+      <% }) %>
+    </dl>
+    <p class="hint">Deze waarden staan in de code en in <code>.env</code>. Aanpassen vanaf deze pagina kan nog niet; een bron pauzeren wel (zie Databronnen).</p>
+  </article>
+
+  <article class="card" id="nog-niet">
+    <h2>Nog niet gebouwd</h2>
+    <ul class="plain-list">
+      <% plans.forEach((plan) => { %>
+        <li>
+          <strong><%= plan.name %>.</strong> <%= plan.text %>
+          <% if (plan.sites) { %>
+            <details>
+              <summary>Welke sites</summary>
+              <ul class="admin-sites">
+                <% plan.sites.forEach((site) => { %><li><%= site %></li><% }) %>
+              </ul>
+            </details>
+          <% } %>
+        </li>
+      <% }) %>
+    </ul>
+  </article>
+
+</div>
+
+<%- include('partials/foot') %>

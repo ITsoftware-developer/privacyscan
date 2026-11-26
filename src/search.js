@@ -192,6 +192,8 @@ export function createBraveSearch({
     url: 'https://search.brave.com',
     isDemo: false,
     retainsResults,
+    // Voor de beheerpagina: hoe de koppeling is ingesteld (nooit de sleutel zelf).
+    settings: { count: 20, country, safesearch: 'moderate', minIntervalMs, timeoutMs },
     // Er komt nooit iets van de zoekopdracht, de naam of de sleutel in de logregels: alleen wat
     // de beheerder moet weten om de fout te vinden.
     async search({ query }) {

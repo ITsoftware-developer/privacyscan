@@ -16,9 +16,15 @@
       <%= appName %>
     </a>
     <% if (locals.user) { %>
-      <form method="post" action="/uitloggen">
-        <button type="submit" class="button button-quiet">Uitloggen</button>
-      </form>
+      <nav class="topnav" aria-label="Account">
+        <% if (locals.isAdmin) { %>
+          <a href="/dashboard">Dashboard</a>
+          <a href="/beheerder">Beheer</a>
+        <% } %>
+        <form method="post" action="/uitloggen">
+          <button type="submit" class="button button-quiet">Uitloggen</button>
+        </form>
+      </nav>
     <% } %>
   </header>
   <main class="<%= locals.wide ? 'page page-wide' : 'page' %>">

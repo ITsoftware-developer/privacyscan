@@ -33,7 +33,9 @@ const REASONS = {
   search_rate_limited: 'De zoekdienst staat nu geen aanvragen meer toe (limiet of tegoed op). Probeer het later nog eens.',
   search_unavailable: 'De zoekdienst was niet bereikbaar.',
   search_unexpected: 'De zoekdienst gaf een onverwacht antwoord.',
-  no_search: 'Er is geen zoekdienst ingesteld, dus er is niet op het web gezocht. Zet BRAVE_API_KEY in je .env (zie de README).',
+  no_search: 'Er is geen zoekdienst ingesteld, dus er is niet op het web gezocht. Zet BRAVE_API_KEY in je .env (zie de README). Staat hij er al in? Start de site dan opnieuw: hij leest .env alleen bij het starten.',
+  paused: 'De beheerder heeft deze bron tijdelijk uitgezet. Probeer het later nog eens.',
+  search_paused: 'De beheerder heeft de zoekdienst tijdelijk uitgezet. Probeer het later nog eens.',
   name_too_short: 'Je naam bevat te weinig letters om op te zoeken.',
   search_disabled: 'Zoeken op naam staat uit op een openbare site: een bevestigd e-mailadres bewijst niet dat de naam van jou is.',
 };
@@ -44,7 +46,7 @@ const UNREACHABLE = new Set([
   'search_failed', 'search_bad_key', 'search_rate_limited', 'search_unavailable', 'search_unexpected',
 ]);
 // Bij deze fouten hebben we de bron niet eens geprobeerd.
-const NOT_TRIED = new Set(['no_key', 'no_search', 'name_too_short', 'search_disabled']);
+const NOT_TRIED = new Set(['no_key', 'no_search', 'name_too_short', 'search_disabled', 'paused', 'search_paused']);
 
 function fromError(error, sources) {
   if (error instanceof ScanError) {

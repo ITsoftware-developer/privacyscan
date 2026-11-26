@@ -13,7 +13,9 @@ import {
   verifyPassword,
 } from './auth.js';
 import { isValidEmail, normalizeEmail } from './email.js';
+import { logEvent } from './events.js';
 import { SqliteStore } from './limit-store.js';
+import { isOwner } from './owner.js';
 
 const FIFTEEN_MINUTES = 15 * 60 * 1000;
 const ONE_HOUR = 60 * 60 * 1000;
@@ -42,7 +44,7 @@ function checkRegistration({ name, email, password, password2 }) {
 }
 
 export function createRoutes({
-  db, production, pwnedCheck, loginLimit, accountLimit, registerLimit, sendConfirmation,
+  db, production, pwnedCheck, loginLimit, accountLimit, registerLimit, sendConfirmation, ownerEmail = null,
 }) {
   const router = Router();
 
@@ -65,11 +67,14 @@ export function createRoutes({
   //
   // Let op de afweging: iemand die jouw e-mailadres kent, kan je account zo
   // ook een kwartier op slot zetten. Daarom duurt de pauze niet langer.
-  const tooManyAttempts = (req, res) => res.status(429).render('inloggen', {
-    error: 'Te veel mislukte pogingen. Probeer het over een kwartier opnieuw.',
-    notice: null,
-    values: { email: readForm(req.body).email },
-  });
+  const tooManyAttempts = (req, res) => {
+    logEvent(db, 'limit_reached', { what: 'login' });
+    res.status(429).render('inloggen', {
+      error: 'Te veel mislukte pogingen. Probeer het over een kwartier opnieuw.',
+      notice: null,
+      values: { email: readForm(req.body).email },
+    });
+  };
 
   const loginIpLimiter = rateLimit({
     windowMs: FIFTEEN_MINUTES,
@@ -115,6 +120,7 @@ export function createRoutes({
     store: new SqliteStore(db, 'register-ip:'),
     handler: (req, res) => {
       const form = readForm(req.body);
+      logEvent(db, 'limit_reached', { what: 'register' });
       res.status(429).render('registreren', {
         error: 'Te veel aanmeldingen vanaf dit adres. Probeer het over een uur opnieuw.',
         values: { naam: form.name, email: form.email },
@@ -186,7 +192,8 @@ export function createRoutes({
 
   router.post('/inloggen', loginIpLimiter, loginAccountLimiter, async (req, res) => {
     const { email, password } = readForm(req.body);
-    const user = db.prepare('SELECT id, password_hash FROM users WHERE email = ?').get(email);
+    const user = db.prepare(`
+      SELECT id, email, password_hash, email_confirmed_at, blocked_at FROM users WHERE email = ?`).get(email);
     const passwordOk = await verifyPassword(user?.password_hash ?? DUMMY_HASH, password);
 
     if (!user || !passwordOk) {
@@ -198,8 +205,25 @@ export function createRoutes({
       });
     }
 
+    // Geblokkeerd door de beheerder. Dat zeggen we pas na het goede wachtwoord, dus het verraadt
+    // niets aan wie het niet al wist.
+    if (user.blocked_at) {
+      logEvent(db, 'blocked_login', { account: user.id });
+      return res.status(403).render('inloggen', {
+        error: 'Dit account is geblokkeerd door de beheerder van deze site. Denk je dat dit niet klopt, of wil je dat je gegevens gewist worden? Kijk in de privacyverklaring hoe je contact opneemt.',
+        notice: null,
+        values: { email },
+      });
+    }
+
     startSession(res, user.id);
     await loginAccountLimiter.resetKey(email); // gelukt: de telling voor dit account weer op nul
+
+    // De beheerder komt meteen op de beheerpagina; iedereen anders op zijn dashboard.
+    if (isOwner(user, ownerEmail)) {
+      logEvent(db, 'admin_login');
+      return res.redirect(303, '/beheerder');
+    }
     res.redirect(303, '/dashboard');
   });
 

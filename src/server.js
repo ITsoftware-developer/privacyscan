@@ -3,10 +3,13 @@ import { join } from 'node:path';
 import { createApp } from './app.js';
 import { createBreachCheck, parseFreeBreachCheck } from './breach-check.js';
 import { openDatabase, removeExpired } from './db.js';
+import { logEvent } from './events.js';
 import { createHibp } from './hibp.js';
 import { prepareStorage } from './housekeeping.js';
 import { createMailer } from './mail.js';
+import { createMonitor } from './monitor.js';
 import { parseOwnerEmail } from './owner.js';
+import { isPwned } from './pwned.js';
 import { WEB_RESULT_MINUTES } from './retention.js';
 import { createSearch, parseStorageRights } from './search.js';
 import { createXon } from './xon.js';
@@ -41,6 +44,12 @@ if (production) {
   }
 }
 
+// De database, en de teller van het verkeer naar de externe diensten (voor de beheerpagina). Elke
+// koppeling hieronder krijgt een fetch die meetelt: welke dienst, gelukt of niet, hoe snel. Nooit wat
+// er gevraagd werd.
+const db = openDatabase(join(import.meta.dirname, '..', 'data', 'privacyscan.db'));
+const monitor = createMonitor(db);
+
 // Zonder SMTP_URL komen mails in een testpostvak op /dev/mails (alleen buiten production).
 const mailer = createMailer({
   smtpUrl: process.env.SMTP_URL || undefined,
@@ -60,8 +69,8 @@ try {
 }
 const hasHibpKey = Boolean(process.env.HIBP_API_KEY);
 const hibp = createBreachCheck({
-  hibp: createHibp({ apiKey: process.env.HIBP_API_KEY || undefined }),
-  xon: freeCheck && !hasHibpKey ? createXon() : null,
+  hibp: createHibp({ apiKey: process.env.HIBP_API_KEY || undefined, fetchImpl: monitor.fetchFor('hibp') }),
+  xon: freeCheck && !hasHibpKey ? createXon({ fetchImpl: monitor.fetchFor('xon') }) : null,
 });
 if (production && !hasHibpKey && !freeCheck) {
   console.warn('Let op: zonder HIBP_API_KEY werkt de controle op de startpagina alleen voor testadressen.');
@@ -79,12 +88,13 @@ try {
   search = createSearch(process.env.SEARCH_PROVIDER, {
     braveKey: process.env.BRAVE_API_KEY,
     storageRights: parseStorageRights(process.env.BRAVE_STORAGE_RIGHTS),
+    fetchImpl: monitor.fetchFor('brave'),
   });
 } catch (error) {
   stopWith(error.message);
 }
 
-// De beheerder: op een openbare site mag alleen dit account op naam zoeken.
+// De beheerder: komt op de beheerpagina (/beheerder), en mag op een openbare site als enige op naam zoeken.
 let ownerEmail;
 try {
   ownerEmail = parseOwnerEmail(process.env.OWNER_EMAIL);
@@ -92,13 +102,20 @@ try {
   stopWith(error.message);
 }
 
-const db = openDatabase(join(import.meta.dirname, '..', 'data', 'privacyscan.db'));
-const app = createApp({ db, production, contact, mailer, baseUrl, hibp, search, ownerEmail });
+// De wachtwoordcheck bij het aanmaken van een account telt ook mee in het verbruik.
+const fetchPwned = monitor.fetchFor('pwned-passwords');
+const pwnedCheck = (password) => isPwned(password, { fetchFn: fetchPwned });
+
+const app = createApp({
+  db, production, contact, mailer, baseUrl, hibp, search, ownerEmail, monitor, pwnedCheck,
+});
+logEvent(db, 'server_started', { mode: production ? 'production' : 'development' });
 
 // Bij het starten: verzonnen demo-resultaten wissen als er een andere zoekdienst is, resultaten
 // die niet mogen blijven een einddatum geven, en wat verlopen is meteen wissen (zie housekeeping.js).
-const { purged } = prepareStorage(db, search);
+const { purged, limited } = prepareStorage(db, search);
 if (purged > 0) console.log(`Verzonnen demo-resultaten van een eerdere versie gewist: ${purged}.`);
+if (purged > 0 || limited > 0) logEvent(db, 'storage_prepared', { purged, limited });
 
 // Daarna elke minuut verlopen sessies, tellers en webresultaten wissen, zodat we niets langer
 // bewaren dan in de privacyverklaring staat. (unref: de timer houdt het
@@ -116,8 +133,11 @@ app.listen(port, host, (error) => {
       ? 'Zoeken op naam staat uit, behalve voor de beheerder (OWNER_EMAIL).'
       : 'Zoeken op naam staat uit. Zet OWNER_EMAIL in je .env om het alleen voor jezelf aan te zetten.');
   }
+  console.log(ownerEmail
+    ? `Beheerpagina: http://localhost:${port}/beheerder (alleen voor het bevestigde account met OWNER_EMAIL).`
+    : 'Beheerpagina: uit. Zet OWNER_EMAIL met je eigen e-mailadres in je .env om hem aan te zetten.');
   if (!search) {
-    console.log('Zoekdienst: niet ingesteld. De app zoekt niet op het web en verzint niets. Zet BRAVE_API_KEY in je .env voor echte resultaten.');
+    console.log('Zoekdienst: niet ingesteld. De app zoekt niet op het web en verzint niets. Zet BRAVE_API_KEY in je .env en start opnieuw: de site leest .env alleen bij het starten.');
   } else if (search.isDemo) {
     console.log('Zoekdienst: DEMO met verzonnen nepdata. Haal SEARCH_PROVIDER=demo weg en zet een BRAVE_API_KEY voor echte resultaten.');
     if (process.env.BRAVE_API_KEY) {

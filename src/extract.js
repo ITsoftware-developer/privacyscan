@@ -129,7 +129,7 @@ const SOCIAL = [
 // Bekende personenzoeksites en telefoongidsen. Dit is een korte, voorzichtige lijst en geen
 // compleet overzicht: een site die er niet op staat, is niet "veilig". De naam van de soort blijft
 // "mogelijk", want wij zien alleen het adres.
-const PEOPLE_SEARCH = [
+export const PEOPLE_SEARCH = [
   'spokeo.com', 'whitepages.com', 'beenverified.com', 'intelius.com', 'peoplefinders.com',
   'truepeoplesearch.com', 'fastpeoplesearch.com', 'radaris.com', 'mylife.com', 'pipl.com',
   'zabasearch.com', 'peekyou.com', 'thatsthem.com', 'nuwber.com', 'clustrmaps.com',

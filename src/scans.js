@@ -13,6 +13,7 @@ export function searchSourceId(search) {
 // Een fout van de zoekdienst wordt een fout van het zoeken op het web. De codes beginnen met
 // "search_", zodat de melding over de zoekdienst gaat en niet over de bron van datalekken.
 const SEARCH_ERRORS = {
+  paused: 'search_paused',
   bad_key: 'search_bad_key',
   rate_limited: 'search_rate_limited',
   unavailable: 'search_unavailable',

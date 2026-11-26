@@ -74,6 +74,9 @@ export function createHibp({
     // Heeft de site een eigen sleutel? Zo niet, dan werken alleen de testadressen.
     hasKey: Boolean(apiKey),
 
+    // Voor de beheerpagina: hoe de koppeling is ingesteld (nooit de sleutel zelf).
+    settings: { minIntervalMs, timeoutMs },
+
     // Kunnen we voor dit adres zoeken? Zonder eigen sleutel alleen voor testadressen.
     hasKeyFor: (email) => keyFor(email) !== null,
 

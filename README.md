@@ -15,7 +15,40 @@ geen ontbrekende functie: Privacyscan vindt en laat zien, wat je daarna doet bep
 > soort gegeven in een datalek zat (bijvoorbeeld telefoonnummers) betekent niet dat jouw nummer eruit
 > gelekt is: niet elk slachtoffer van een lek verloor elke soort gegeven.
 
-## Wat is er nieuw in 0.6.0?
+## Wat is er nieuw in 0.7.0? De beheerpagina
+
+Op `/beheerder` staat een technisch controlecentrum, alleen voor jou als beheerder. Je ziet er wat de site doet,
+welke bronnen hij gebruikt, waar het vastloopt en hoeveel aanvragen het kost:
+
+| Onderdeel | Wat je ziet of doet |
+|---|---|
+| Systeemstatus | Wanneer de site gestart is en met welke instellingen (zoekdienst, datalekbron, mail), de database en de aantallen bevindingen. Is de site gestart zonder `BRAVE_API_KEY`, dan staat dat bovenaan, met de oplossing. |
+| Databronnen | Per bron de toestand (actief, niet ingesteld, alleen testadressen, gepauzeerd) en de laatste aanvraag: gelukt of niet, de HTTP-status en de duur. **Testen** doet een neutrale proefaanvraag. **Pauzeren** zet een bron tijdelijk uit: de site stuurt er dan niets meer heen, en wie zoekt, hoort dat de bron tijdelijk uit staat. |
+| API-verbruik | Het aantal aanvragen per dienst vandaag, deze maand en vorige maand, en hoeveel daarvan mislukten. Voor Brave ook de limieten die Brave zelf bij elk antwoord meegeeft, en een schatting van de kosten. |
+| Onderzoeken | Wat er nu loopt, de laatste Deep Scans met de uitkomst per stap, en de laatste losse scans (alleen de aantallen). |
+| Systeemlog | Storingen van bronnen, scans met aantallen en duur, onverwachte fouten, en wat jij als beheerder deed. Zonder persoonsgegevens, en hooguit 30 dagen. |
+| Accounts | De aantallen, en per account het e-mailadres, de datums en de status. **Blokkeren** bij misbruik: inloggen kan dan niet meer, en een open sessie stopt meteen. Deblokkeren maakt het ongedaan. |
+| Scannerinstellingen | De limieten en instellingen die nu gelden. Alleen om te zien: ze staan in de code en in `.env`. |
+| Nog niet gebouwd | De AI-engine, de Data Broker Engine, onderzoek op de achtergrond, pagina's zelf onderzoeken, automatisch opnieuw scannen en tweestapsverificatie. |
+
+**Zo kom je erop.** Zet in je `.env` de regel `OWNER_EMAIL=` met je eigen e-mailadres en start de site opnieuw.
+Log in met het account met dat adres (het moet bevestigd zijn): je komt dan meteen op de beheerpagina. Vanaf je
+dashboard kom je er via **Beheer** rechtsboven. De server controleert bij elk verzoek of jij het bent; een
+verborgen link is geen beveiliging. Voor ieder ander account bestaat de pagina niet (de gewone "pagina niet
+gevonden"), en wie niet is ingelogd, gaat naar de inlogpagina.
+
+**Wat er bewust niet op staat:** namen, woonplaatsen, zoekopdrachten en wat er over iemand gevonden is. Het
+systeemlog bevat alleen vaste meldingen met getallen en vaste woorden (zie `events.js`): er kan geen
+e-mailadres, naam, zoekopdracht, webadres of sleutel in komen, ook niet via de foutmelding van een andere dienst.
+De sleutels zelf zie je nergens: alleen of ze ingesteld zijn.
+
+**Wat er nog niet is** (uit dezelfde beoordeling): de scanner leest nog steeds alleen de titel, het fragment en
+het adres die de zoekdienst teruggeeft, en opent de pagina zelf niet. Het zoeken begint bij je naam en
+woonplaats, niet bij je e-mailadres. Er is geen AI-agent, geen eigen onderzoek bij databrokers en geen wachtrij
+op de achtergrond. En tweestapsverificatie voor de beheerder ontbreekt nog: zet de site niet openbaar voordat
+die er is.
+
+## Wat was er nieuw in 0.6.0?
 
 Versie 0.5.0 kreeg een kritische beoordeling met zes punten. Zo is er mee omgegaan, en wat er nog niet is:
 
@@ -206,14 +239,14 @@ Zet ze in een bestand `.env`: kopieer `.env.example` naar `.env` en pas het aan.
 | `BRAVE_API_KEY`    | leeg                        | Sleutel van Brave Search. Met sleutel zoekt de site op het web. Zet hem alleen in `.env`      |
 | `SEARCH_PROVIDER`  | leeg                        | Leeg = Brave als er een sleutel is, anders geen zoekdienst. `brave`, `demo` (verzonnen nepdata) of `none` |
 | `BRAVE_STORAGE_RIGHTS` | leeg                    | `on` alleen als je abonnement bij Brave het bewaren van resultaten toestaat. Anders blijven ze 30 minuten staan |
-| `OWNER_EMAIL`      | leeg                        | Online: de beheerder, die als enige op naam mag zoeken (zie "Later online zetten")            |
+| `OWNER_EMAIL`      | leeg                        | Jouw e-mailadres: dat account komt op de beheerpagina (`/beheerder`), en mag online als enige op naam zoeken (zie "Later online zetten") |
 
 | Commando                | Wat het doet                                                      |
 |-------------------------|-------------------------------------------------------------------|
 | `npm start`             | Start de site                                                     |
 | `npm run dev`           | Start de site en herstart automatisch als je een bestand wijzigt  |
 | `npm run controleer`    | Probeert Brave en XposedOrNot echt uit, met je eigen sleutel      |
-| `npm test`              | Draait alle tests (464 stuks, een paar seconden)                  |
+| `npm test`              | Draait alle tests (513 stuks, een paar seconden)                  |
 | `npm run test:coverage` | Draait de tests en laat zien welke regels code ze niet raken      |
 
 Alle gegevens staan in `data/privacyscan.db`. Gooi je die map weg, dan begin je opnieuw.
@@ -227,10 +260,17 @@ src/
   routes-public.js  de startpagina, de openbare e-mailcontrole (zonder account) en de pagina /bronnen
   routes.js         de pagina's van fase 1: registreren, inloggen, account verwijderen, privacy
   routes-scan.js    de pagina's met account: dashboard, bevestigen, zoekgegevens, zoeken, de Deep Scan, resultaten
+  routes-admin.js   de beheerpagina (/beheerder): wie erop mag, testen, pauzeren, blokkeren
+  admin.js          wat de beheerpagina laat zien (status, bronnen, verbruik, onderzoeken, accounts, instellingen)
+  monitor.js        telt de aanvragen naar elke externe dienst, leest de limieten van Brave, weet wat er nu loopt
+  events.js         het systeemlog: vaste meldingen, zonder persoonsgegevens
+  controls.js       de pauzeknoppen van de beheerpagina
+  probes.js         de proefaanvragen: voor de testknoppen en voor `npm run controleer`
+  services.js       de externe diensten (Brave, XposedOrNot, HIBP, Pwned Passwords) op één plek
   auth.js           wachtwoorden hashen, sessies en de CSRF-check
   confirm.js        e-mailadres bevestigen: tokens, geldigheid en de bevestigingsmail
   email.js          de regels voor e-mailadressen (netjes maken, controleren), op één plek
-  owner.js          de beheerder (OWNER_EMAIL): wie online op naam mag zoeken
+  owner.js          de beheerder (OWNER_EMAIL): wie op de beheerpagina komt en online op naam mag zoeken
   mail.js           mail versturen (SMTP) of in het testpostvak zetten
   hibp.js           praat met Have I Been Pwned (datalekken van een e-mailadres)
   xon.js            praat met XposedOrNot, de gratis bron (zonder sleutel, met een lage limiet)
@@ -253,6 +293,7 @@ src/
   db.js             de database, de tabellen en het bijwerken van oudere databases
 views/              de pagina's (HTML met EJS)
   bronnen.ejs             het bronnenregister en de roadmap
+  beheerder.ejs           de beheerpagina
   partials/engine.ejs     het paneel "Research Engine" met de vijf stappen
   partials/evidence.ejs   de bron, datum en zekerheid bij een bevinding
 public/             de vormgeving (CSS)
@@ -481,6 +522,15 @@ blijft je keuze als vingerafdruk van het adres bestaan, ook als het resultaat ze
   Brave (nooit in een URL, een pagina of een logregel), de koppeling volgt geen omleidingen en heeft een
   tijdslimiet. De zoekopdracht bevat je naam en woonplaats en wordt niet gelogd, ook niet bij een fout.
   De tests controleren dit voor elke soort fout.
+- **De beheerpagina** (`/beheerder`) controleert bij elk verzoek of je het bevestigde account met `OWNER_EMAIL`
+  bent. Voor ieder ander bestaat de pagina niet (404), ook de formulieren niet. De knoppen werken met dezelfde
+  CSRF-controle als de rest van de site, de pagina komt niet in de cache van de browser (`no-store`), en elke
+  actie van de beheerder komt in het systeemlog. Een geblokkeerd account kan niet inloggen, en een sessie van
+  dat account werkt meteen niet meer. Je kunt je eigen account niet blokkeren. Testknoppen: 20 per uur.
+  Nog niet gedaan: tweestapsverificatie. Wie jouw wachtwoord heeft, komt nu op de beheerpagina.
+- **Het systeemlog** bevat alleen vaste meldingen. De details zijn getallen en woorden uit vaste lijsten; al het
+  andere gooit de code weg, voordat er iets wordt opgeslagen. De tests proberen er een e-mailadres, naam,
+  zoekopdracht, webadres en sleutel in te krijgen, en controleren dat dat niet lukt.
 - **Helmet** zet veilige HTTP-headers, zoals een Content-Security-Policy.
 - De server is standaard **alleen bereikbaar vanaf je eigen computer**, en het testpostvak
   (`/dev/mails`) bestaat alleen buiten `production` en alleen voor verzoeken van die computer zelf.
@@ -510,6 +560,12 @@ blijft je keuze als vingerafdruk van het adres bestaan, ook als het resultaat ze
   datum en de zekerheid staan. Werk hem bij zodra de app meer gegevens verwerkt, bijvoorbeeld bij
   automatisch opnieuw zoeken. De tekst over de wettelijke grondslag is een concept: laat hem
   controleren voordat je de site openbaar maakt.
+- De **beheerpagina** toont per account het nummer, het e-mailadres, de datums, of het bevestigd of
+  geblokkeerd is en wanneer er gezocht is (met de aantallen). Geen namen, woonplaatsen, zoekopdrachten of
+  bevindingen: die heeft de beheerder niet nodig. Het **systeemlog** heeft geen persoonsgegevens (alleen het
+  nummer van een account als de beheerder het blokkeert of deblokkeert, of als een geblokkeerd account probeert
+  in te loggen) en blijft 30 dagen. De **tellers van het verbruik** zijn alleen aantallen per dienst per dag. De
+  privacyverklaring zegt dit allemaal onder "Wat de beheerder ziet".
 - De **openbare e-mailcontrole** bewaart niets over het adres dat iemand intypt: niet in de
   database, niet in een logboek en niet in de URL. Het adres gaat wel naar de bron (Have I Been Pwned
   of XposedOrNot, anders is er niets om te controleren), en de privacyverklaring noemt de bron die
@@ -620,10 +676,14 @@ pas aan een stap als je hem echt wilt.
   in de browser tot een hash gemaakt, en alleen de eerste 5 tekens daarvan gaan naar de dienst
   (k-anonimiteit). Het wachtwoord zelf verlaat de browser nooit. Dit werkt echt, zonder betaalde
   sleutel; `pwned.js` doet hetzelfde al bij het registreren.
-- **Een achtergrondscanner met voortgang** (versie 0.7.0): een wachtrij van klussen, een proces dat ze
-  afwerkt, voortgang per stap die je op de pagina ziet, en herstel na een herstart van de server. Daarna
-  gericht zoeken naar bekende databrokersites (met de zoekdienst, alleen vinden en tonen) en naar sociale
-  media en openbare documenten.
+- **Tweestapsverificatie voor de beheerder** (een code uit een app als Microsoft Authenticator), voordat de site
+  openbaar gaat: nu komt iedereen met jouw wachtwoord op de beheerpagina.
+- **Een achtergrondscanner met voortgang**: een wachtrij van klussen, een proces dat ze afwerkt, voortgang per
+  stap die je op de pagina en op de beheerpagina ziet, en herstel na een herstart van de server. Daarna gericht
+  zoeken naar bekende databrokersites (met de zoekdienst, alleen vinden en tonen) en naar sociale media en
+  openbare documenten.
+- **Pagina's zelf onderzoeken**: alleen bij bronnen waar dat mag, en met de afwegingen die daarbij horen (de
+  voorwaarden van de site, robots.txt, wat je bewaart).
 - **Een identiteitscontrole** (bijvoorbeeld iDIN of een ID-scan) voordat zoeken op naam voor andere
   gebruikers opengaat.
 - **Een toestemmingsprocedure voor onderzoek naar iemand anders**, pas ná de identiteitscontrole.
@@ -642,6 +702,9 @@ pas aan een stap als je hem echt wilt.
   (2 per seconde, 25 per uur, 100 per dag per IP-adres), en
   [XposedOrNot-API op GitHub](https://github.com/XposedOrNot/XposedOrNot-API) voor de voorwaarden
   ("voor persoonlijk gebruik en weinig verkeer").
+- [Brave Search API: limieten](https://api-dashboard.search.brave.com/documentation/guides/rate-limiting): de headers
+  `X-RateLimit-Limit`, `-Policy`, `-Remaining` en `-Reset` die de beheerpagina leest, en dat alleen geslaagde
+  aanvragen meetellen en betaald worden.
 - [Brave Search API](https://brave.com/search/api): de actuele prijzen, en de
   [voorwaarden](https://api-dashboard.search.brave.com/terms-of-service): niet bewaren (3(b)(i)), geen afgeleide
   werken (3(b)(ii)), geen AI-training of -beoordeling (3(b)(xiii)), "Powered by Brave" tonen is optioneel (4(d)).

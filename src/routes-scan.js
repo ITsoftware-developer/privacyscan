@@ -8,7 +8,9 @@ import { CONFIRM_MINUTES, confirmEmail, isConfirmationValid } from './confirm.js
 import {
   WEB_CHOICES, countFindings, lastRun, lastScan, listFindings, setWebStatus,
 } from './findings.js';
+import { logEvent } from './events.js';
 import { SqliteStore } from './limit-store.js';
+import { createMonitor } from './monitor.js';
 import { hasOwnerAddress, isOwner } from './owner.js';
 import { ScanError } from './scan-error.js';
 import { runDeepScan } from './scanner.js';
@@ -49,7 +51,9 @@ function problemsFor(source) {
     unavailable: [502, `${source.name} is nu niet bereikbaar. Probeer het later nog eens.`],
     unexpected: [502, `${source.name} gaf een onverwacht antwoord. Probeer het later nog eens.`],
     name_too_short: [400, 'Je naam bevat te weinig letters om op te zoeken.'],
-    no_search: [503, 'Er is geen zoekdienst ingesteld, dus we kunnen niet op het web zoeken. Zet BRAVE_API_KEY in je .env (zie de README) en start de site opnieuw.'],
+    no_search: [503, 'Er is geen zoekdienst ingesteld, dus we kunnen niet op het web zoeken. Zet BRAVE_API_KEY in je .env (zie de README). Staat hij er al in? Start de site dan opnieuw: hij leest .env alleen bij het starten.'],
+    paused: [503, `${source.name} is tijdelijk uitgezet door de beheerder. Probeer het later nog eens.`],
+    search_paused: [503, 'Zoeken op het web is tijdelijk uitgezet door de beheerder. Probeer het later nog eens.'],
     search_failed: [502, 'De zoekdienst gaf een fout. Probeer het later nog eens.'],
     search_bad_key: [502, 'De zoekdienst accepteerde de sleutel niet. Controleer BRAVE_API_KEY in je .env.'],
     search_rate_limited: [429, 'De zoekdienst staat nu geen aanvragen meer toe: de limiet of het tegoed is op. Probeer het later nog eens.'],
@@ -78,8 +82,29 @@ function requireConfirmed(req, res, next) {
 
 export function createScanRoutes({
   db, production, mailer, hibp, search, sendConfirmation, resendLimit, scanLimit, ownerEmail = null,
+  monitor = createMonitor(db),
 }) {
   const router = Router();
+
+  // Voert een onderzoek uit en zet de uitkomst in het systeemlog: alleen de soort, de aantallen, de
+  // duur of de foutcode, nooit wie het was of wat er gevonden is. Op de beheerpagina zie je zo ook
+  // wat er op dit moment loopt (monitor.track).
+  async function tracked(scan, work) {
+    const started = Date.now();
+    try {
+      const result = await monitor.track(scan, work);
+      if (scan === 'deep') {
+        const done = result.steps.filter((step) => step.status === 'done').length;
+        logEvent(db, 'deep_scan_done', { done, total: result.steps.length, ms: Date.now() - started });
+      } else {
+        logEvent(db, 'scan_done', { scan, found: result.found, added: result.added, ms: Date.now() - started });
+      }
+      return result;
+    } catch (error) {
+      if (error instanceof ScanError) logEvent(db, 'scan_failed', { scan, code: error.code });
+      throw error;
+    }
+  }
 
   // Welke bron zoekt de datalekken van dit account op? (Die van HIBP, of de gratis
   // XposedOrNot, als de site geen HIBP-sleutel heeft.)
@@ -116,17 +141,13 @@ export function createScanRoutes({
     }),
   });
 
-  const breachLimiter = limiter({
-    prefix: 'scan-breach:',
-    limit: scanLimit,
-    handler: (req, res) => renderResults(req, res, { status: 429, error: TOO_OFTEN }),
-  });
+  const tooOften = (req, res) => {
+    logEvent(db, 'limit_reached', { what: 'scan' });
+    renderResults(req, res, { status: 429, error: TOO_OFTEN });
+  };
 
-  const webLimiter = limiter({
-    prefix: 'scan-web:',
-    limit: scanLimit,
-    handler: (req, res) => renderResults(req, res, { status: 429, error: TOO_OFTEN }),
-  });
+  const breachLimiter = limiter({ prefix: 'scan-breach:', limit: scanLimit, handler: tooOften });
+  const webLimiter = limiter({ prefix: 'scan-web:', limit: scanLimit, handler: tooOften });
 
   // Toont de resultatenpagina, eventueel met een melding of een foutmelding.
   function renderResults(req, res, { status = 200, error = null, notice = null } = {}) {
@@ -273,9 +294,9 @@ export function createScanRoutes({
   // zoekdienst, dus hij telt voor allebei mee in de limieten: zo kun je de aanvragen die de
   // bronnen ons toestaan niet verdubbelen door de Deep Scan naast de losse knoppen te gebruiken.
   router.post('/scan/deep', requireLogin, requireConfirmed, breachLimiter, webLimiter, async (req, res) => {
-    await runDeepScan({
+    await tracked('deep', () => runDeepScan({
       db, user: req.user, hibp, search, allowWeb: canSearchByName(req.user),
-    });
+    }));
     res.redirect(303, '/resultaten?gescand=deep#rapport');
   });
 
@@ -284,7 +305,7 @@ export function createScanRoutes({
   // lezen we dat nergens.
   router.post('/scan/datalekken', requireLogin, requireConfirmed, breachLimiter, async (req, res) => {
     try {
-      await scanBreaches({ db, user: req.user, hibp });
+      await tracked('breach', () => scanBreaches({ db, user: req.user, hibp }));
     } catch (error) {
       if (error instanceof ScanError) return showProblem(req, res, error);
       throw error;
@@ -295,7 +316,7 @@ export function createScanRoutes({
   // Ook hier geen invoer: de zoekopdracht wordt gemaakt van je naam en woonplaats.
   router.post('/scan/web', requireLogin, requireConfirmed, webLimiter, async (req, res) => {
     try {
-      await scanWeb({ db, user: req.user, search, allowed: canSearchByName(req.user) });
+      await tracked('web', () => scanWeb({ db, user: req.user, search, allowed: canSearchByName(req.user) }));
     } catch (error) {
       if (error instanceof ScanError) return showProblem(req, res, error);
       throw error;

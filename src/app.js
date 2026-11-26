@@ -6,16 +6,20 @@ import cookieParser from 'cookie-parser';
 import { join } from 'node:path';
 import { checkOrigin, loadUser } from './auth.js';
 import { CONFIRM_MINUTES, sendConfirmationMail } from './confirm.js';
+import { pausableBreachCheck, pausableSearch } from './controls.js';
+import { logEvent } from './events.js';
 import { createHibp } from './hibp.js';
 import { createMailer } from './mail.js';
 import { confidenceLabel, decisionLabel } from './confidence.js';
 import { dataClassLabel } from './data-classes.js';
 import { describeStep } from './engine.js';
 import { describeWebResult } from './extract.js';
-import { parseOwnerEmail } from './owner.js';
+import { createMonitor } from './monitor.js';
+import { isOwner, parseOwnerEmail } from './owner.js';
 import { isPwned } from './pwned.js';
 import { WEB_RESULT_MINUTES } from './retention.js';
 import { createRoutes } from './routes.js';
+import { createAdminRoutes } from './routes-admin.js';
 import { createPublicRoutes } from './routes-public.js';
 import { createScanRoutes } from './routes-scan.js';
 import { PHASES, evidenceSource, sourceById, sourceHost } from './sources.js';
@@ -37,9 +41,16 @@ export function createApp({
   mailer = createMailer(),            // zonder SMTP-instelling: een testpostvak in het geheugen
   baseUrl = 'http://localhost:3000',  // voor de links in mails; komt nooit uit het verzoek zelf
   contact = {},         // naam en e-mailadres voor de privacyverklaring
-  ownerEmail = null,    // de beheerder: mag op een openbare site als enige op naam zoeken
+  ownerEmail = null,    // de beheerder: mag op een openbare site als enige op naam zoeken, en komt op /beheerder
+  testLimit = 20,       // testknoppen op de beheerpagina per uur (elke test is een echte aanvraag)
+  monitor = null,       // telt de aanvragen naar de externe diensten (zie monitor.js en server.js)
 }) {
   const owner = parseOwnerEmail(ownerEmail);
+  const meter = monitor ?? createMonitor(db);
+  // Wat de rest van de site gebruikt: de zoekdienst en de controle op datalekken met de pauzeknop van
+  // de beheerpagina ervoor (zie controls.js). De beheerpagina zelf krijgt de originelen, voor de testknoppen.
+  const guardedSearch = pausableSearch(search, db);
+  const guardedCheck = pausableBreachCheck(hibp, db);
   const app = express();
   app.set('view engine', 'ejs');
   app.set('views', join(ROOT, 'views'));
@@ -96,13 +107,33 @@ export function createApp({
   app.use(cookieParser());
   app.use(checkOrigin);
   app.use(loadUser(db));
+  // Alleen de beheerder ziet de link naar de beheerpagina (de pagina zelf controleert het opnieuw).
+  app.use((req, res, next) => {
+    res.locals.isAdmin = isOwner(req.user, owner);
+    next();
+  });
   const sendConfirmation = (user) => sendConfirmationMail({ db, mailer, baseUrl, user });
-  app.use(createPublicRoutes({ db, hibp, search, checkLimit }));
+  app.use(createPublicRoutes({
+    db, hibp: guardedCheck, search: guardedSearch, checkLimit, monitor: meter,
+  }));
   app.use(createRoutes({
-    db, production, pwnedCheck, loginLimit, accountLimit, registerLimit, sendConfirmation,
+    db, production, pwnedCheck, loginLimit, accountLimit, registerLimit, sendConfirmation, ownerEmail: owner,
   }));
   app.use(createScanRoutes({
-    db, production, mailer, hibp, search, sendConfirmation, resendLimit, scanLimit, ownerEmail: owner,
+    db, production, mailer, hibp: guardedCheck, search: guardedSearch, sendConfirmation, resendLimit, scanLimit,
+    ownerEmail: owner, monitor: meter,
+  }));
+  app.use('/beheerder', createAdminRoutes({
+    db,
+    production,
+    ownerEmail: owner,
+    monitor: meter,
+    search,
+    check: hibp,
+    mailer,
+    limits: {
+      loginLimit, accountLimit, registerLimit, resendLimit, scanLimit, checkLimit, testLimit,
+    },
   }));
 
   // Onbekende pagina
@@ -116,6 +147,7 @@ export function createApp({
   // Onverwachte fout: de details komen alleen in je terminal, niet bij de bezoeker.
   app.use((error, req, res, next) => {
     console.error(error);
+    logEvent(db, 'unexpected_error', { error: error?.name });
     const status = error.status >= 400 && error.status < 600 ? error.status : 500;
     res.status(status).render('fout', {
       title: 'Er ging iets mis',
