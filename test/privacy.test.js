@@ -176,7 +176,7 @@ test('op je eigen computer noemt de privacyverklaring je telefoonnummer, de sms-
     /met welk gegeven het gevonden is \(je naam, je telefoonnummer of je e-mailadres\)/,
     /Per databroker of telefoongids uit ons register bewaren we wanneer we voor het laatst keken/,
     /gericht bij databrokers en telefoongidsen, op sociale media en in openbare documenten/,
-    /de sites zelf bezoeken we niet/,
+    /Dat zoeken gaat via de zoekdienst/,
     /Heb je je telefoonnummer bevestigd, dan sturen we bij de Deep Scan ook dat nummer \(in een paar schrijfwijzen\) als zoekopdracht naar Zoekmachine X/,
     /Er is nog geen sms-dienst gekoppeld\. De sms met de code komt op deze installatie in een testpostvak/,
     new RegExp(`Een code voor je telefoonnummer: ${CODE_MINUTES} minuten`),
@@ -191,4 +191,33 @@ test('bij de demo-zoekdienst gaan ook je telefoonnummer en e-mailadres nergens h
   const text = await privacyText(t, { search: fakeSearch({ isDemo: true }) });
   assert.doesNotMatch(text, /dan sturen we ook je e-mailadres als zoekopdracht/);
   assert.doesNotMatch(text, /dan sturen we bij de Deep Scan ook dat nummer/);
+});
+
+test('leest de site gevonden pagina\'s zelf, dan zegt de privacyverklaring wat er gebeurt en wat we bewaren', async (t) => {
+  const reader = { async read() { return { status: 'onbereikbaar' }; } };
+  const on = await privacyText(t, { search: fakeSearch(), pageReader: reader });
+  assert.match(on, /Gevonden pagina's lezen we soms zelf\./);
+  assert.match(on, /Sites van databrokers, personenzoeksites en sociale media openen we niet/);
+  assert.match(on, /robots\.txt/);
+  assert.match(on, /alleen welke van je gegevens erop stonden en een kort stukje tekst rond je naam/);
+  const off = await privacyText(t, { search: fakeSearch() });
+  assert.doesNotMatch(off, /Gevonden pagina's lezen we soms zelf/);
+});
+
+test('met een AI-model zegt de privacyverklaring welk model, wat het krijgt en waar het draait', async (t) => {
+  const { createAiAgent } = await import('../src/ai/agent.js');
+  const provider = (url, local) => ({
+    name: 'Ollama', model: 'qwen3:8b', url, local, async chat() { return { content: {} }; },
+  });
+  const local = await privacyText(t, { search: fakeSearch(), ai: createAiAgent({ provider: provider('http://127.0.0.1:11434', true) }) });
+  assert.match(local, /Een AI-model kijkt mee\. Bij de Deep Scan beoordeelt een AI-model \(qwen3:8b, via Ollama\)/);
+  assert.match(local, /je naam, je woonplaats, je bevestigde e-mailadres en telefoonnummer, en de tekst van de resultaten/);
+  assert.match(local, /Het model draait op dezelfde computer als deze site: er gaat niets naar een externe AI-dienst\./);
+  assert.match(local, /We gebruiken niets om een AI-model te trainen\./);
+
+  const remote = await privacyText(t, { search: fakeSearch(), ai: createAiAgent({ provider: provider('http://192.168.1.20:11434', false) }) });
+  assert.match(remote, /Het model draait op een andere computer \(192\.168\.1\.20:11434\): daar gaan die gegevens heen\./);
+
+  const none = await privacyText(t, { search: fakeSearch() });
+  assert.doesNotMatch(none, /AI-model/);
 });

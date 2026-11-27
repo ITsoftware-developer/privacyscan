@@ -10,6 +10,11 @@ import { prepareStorage } from './housekeeping.js';
 import { createMailer } from './mail.js';
 import { createMonitor } from './monitor.js';
 import { parseOwnerEmail } from './owner.js';
+import { createPageReader, parsePageCheck } from './research/page-reader.js';
+import { createAiAgent } from './ai/agent.js';
+import {
+  DEFAULT_OLLAMA_MODEL, createOllama, parseAiProvider, parseOllamaUrl,
+} from './ai/ollama.js';
 import { isPwned } from './pwned.js';
 import { WEB_RESULT_MINUTES } from './retention.js';
 import { createSearch, parseStorageRights } from './search.js';
@@ -107,6 +112,32 @@ try {
   stopWith(error.message);
 }
 
+// Gevonden pagina's zelf lezen (zie research/page-reader.js): staan je gegevens er echt op? Standaard aan;
+// PAGE_CHECK=off zet het uit.
+let pageReader = null;
+try {
+  pageReader = parsePageCheck(process.env.PAGE_CHECK) ? createPageReader() : null;
+} catch (error) {
+  stopWith(error.message);
+}
+
+// De AI-agent (zie ai/): een AI-model dat in de Deep Scan meekijkt. Standaard uit. Met AI_PROVIDER=ollama
+// gebruikt de site Ollama, standaard op deze computer (OLLAMA_URL) met het model OLLAMA_MODEL. De gegevens in
+// een onderzoek gaan dan naar Ollama op dat adres, en nergens anders heen.
+let ai = null;
+try {
+  if (parseAiProvider(process.env.AI_PROVIDER) === 'ollama') {
+    const provider = createOllama({
+      url: parseOllamaUrl(process.env.OLLAMA_URL),
+      model: String(process.env.OLLAMA_MODEL ?? '').trim() || DEFAULT_OLLAMA_MODEL,
+      fetchImpl: monitor.fetchFor('ollama'),
+    });
+    ai = createAiAgent({ provider });
+  }
+} catch (error) {
+  stopWith(error.message);
+}
+
 // De beheerder: komt op de beheerpagina (/beheerder), en mag op een openbare site als enige op naam zoeken.
 let ownerEmail;
 try {
@@ -120,7 +151,7 @@ const fetchPwned = monitor.fetchFor('pwned-passwords');
 const pwnedCheck = (password) => isPwned(password, { fetchFn: fetchPwned });
 
 const app = createApp({
-  db, production, contact, mailer, baseUrl, hibp, search, ownerEmail, monitor, pwnedCheck, budget,
+  db, production, contact, mailer, baseUrl, hibp, search, ownerEmail, monitor, pwnedCheck, budget, pageReader, ai,
 });
 logEvent(db, 'server_started', { mode: production ? 'production' : 'development' });
 // De werker van de onderzoekswachtrij: een Deep Scan loopt op de achtergrond. Wat bij de vorige keer
@@ -169,6 +200,14 @@ app.listen(port, host, (error) => {
     console.log('Datalekken: gratis via XposedOrNot (25 controles per uur, 100 per dag). Met HIBP_API_KEY gebruikt de app Have I Been Pwned.');
   } else {
     console.log('Datalekken: alleen de testadressen van Have I Been Pwned werken. Zet FREE_BREACH_CHECK=on of een HIBP_API_KEY in je .env.');
+  }
+  console.log(pageReader
+    ? 'Pagina\'s controleren: aan. De Deep Scan leest hooguit een paar gevonden gewone webpagina\'s zelf (PAGE_CHECK=off zet het uit).'
+    : 'Pagina\'s controleren: uit (PAGE_CHECK=off).');
+  if (ai) {
+    console.log(`AI: ${ai.model} via ${ai.providerName} op ${ai.url}${ai.local ? ' (deze computer: er gaat niets naar buiten)' : '. Let op: dat is niet deze computer, dus de gegevens van een onderzoek gaan daarheen.'}`);
+  } else {
+    console.log('AI: uit. Zet AI_PROVIDER=ollama in je .env om een lokaal AI-model mee te laten kijken (zie de README).');
   }
   if (!production && !mailer.usesSmtp) {
     console.log(`Mails komen in het testpostvak: http://localhost:${port}/dev/mails`);

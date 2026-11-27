@@ -38,7 +38,30 @@ function fromRow(row) {
     startedAt: row.started_at ?? null,
     heartbeatAt: row.heartbeat_at ?? null,
     finishedAt: row.finished_at ?? null,
+    cancelRequested: row.cancel_requested ?? null,
   };
+}
+
+// Een onderzoek stoppen. Staat het nog in de wachtrij, dan is het meteen gestopt. Loopt het, dan stopt
+// de werker bij het volgende controlepunt: voor elke stap en voor elke aanvraag aan een bron (zie
+// research/orchestrator.js). `by` is 'user' (je eigen onderzoek) of 'admin' (de beheerder).
+// Geeft 'stopped', 'stopping' of null (er wachtte of liep niets met dit nummer).
+export const CANCEL_CODES = { user: 'cancelled', admin: 'cancelled_admin' };
+
+export function requestCancel(db, id, by, now = Date.now()) {
+  if (!Object.hasOwn(CANCEL_CODES, by)) throw new Error(`Onbekend: ${by}`);
+  const stopped = db.prepare(`
+    UPDATE jobs SET status = 'failed', error = ?, cancel_requested = ?, finished_at = ?
+    WHERE id = ? AND status = 'queued'`).run(CANCEL_CODES[by], by, now, id).changes;
+  if (stopped) return 'stopped';
+  const stopping = db.prepare(`
+    UPDATE jobs SET cancel_requested = COALESCE(cancel_requested, ?) WHERE id = ? AND status = 'running'`).run(by, id).changes;
+  return stopping ? 'stopping' : null;
+}
+
+// Wie vroeg om dit onderzoek te stoppen: 'user', 'admin' of null.
+export function cancelRequested(db, id) {
+  return db.prepare('SELECT cancel_requested FROM jobs WHERE id = ?').get(id)?.cancel_requested ?? null;
 }
 
 // Het onderzoek dat voor dit account in de wachtrij staat of loopt, of null.
@@ -99,6 +122,11 @@ export function finishJob(db, id, { status, steps = null, error = null }, now = 
 // stond net uit). Dat gaat terug in de wachtrij, tenzij het al te vaak opnieuw begonnen is.
 // Geeft { requeued, failed }.
 export function requeueInterrupted(db, now = Date.now()) {
+  // Wie om stoppen vroeg, krijgt na een herstart geen nieuwe ronde.
+  db.prepare(`
+    UPDATE jobs SET status = 'failed', finished_at = ?,
+           error = CASE cancel_requested WHEN 'admin' THEN 'cancelled_admin' ELSE 'cancelled' END
+    WHERE status = 'running' AND cancel_requested IS NOT NULL`).run(now);
   const failed = db.prepare(`
     UPDATE jobs SET status = 'failed', error = 'interrupted', finished_at = ?
     WHERE status = 'running' AND attempts >= ?`).run(now, MAX_ATTEMPTS).changes;

@@ -44,6 +44,12 @@ export function brokerQueries(name) {
   }));
 }
 
+// Eén databroker apart, als de zoekopdracht voor zijn groepje het maximum aantal resultaten gaf.
+export function singleBrokerQuery(name, broker) {
+  const who = exactName(name);
+  return who ? `${who} site:${broker.domain}` : null;
+}
+
 export function phoneQuery(phone) {
   return phone ? phoneVariants(phone).map(quoted).join(' OR ') : null;
 }

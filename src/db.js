@@ -14,6 +14,7 @@ export function openDatabase(path) {
   db.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
+    PRAGMA busy_timeout = 5000; -- schrijft een ander proces net, dan even wachten in plaats van meteen een fout
 
     CREATE TABLE IF NOT EXISTS users (
       id                 INTEGER PRIMARY KEY,
@@ -167,6 +168,16 @@ export function openDatabase(path) {
       value      TEXT    NOT NULL,
       updated_at INTEGER NOT NULL
     );
+
+    -- De kostengrens (budget.js): een plek die een aanvraag naar een betaalde dienst krijgt voordat hij
+    -- vertrekt, tot het antwoord er is en in api_usage staat. Zo tellen lopende aanvragen mee, ook uit
+    -- een ander proces. Een plek van een proces dat onderweg stopte, verloopt vanzelf (expires_at).
+    CREATE TABLE IF NOT EXISTS budget_holds (
+      id         INTEGER PRIMARY KEY,
+      service    TEXT    NOT NULL,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    );
   `);
 
   // Een database uit fase 1 heeft de twee nieuwe kolommen van users nog niet.
@@ -180,6 +191,13 @@ export function openDatabase(path) {
   addColumn(db, 'users', 'phone_verified_at', 'INTEGER');
   // Wanneer je toestemming gaf om ook op je e-mailadres op het web te zoeken. Leeg = nee.
   addColumn(db, 'users', 'email_web_at', 'INTEGER');
+
+  // Een onderzoek stoppen (zie jobs/queue.js): wie erom vroeg, 'user' of 'admin'. Leeg = niemand.
+  addColumn(db, 'jobs', 'cancel_requested', 'TEXT');
+  // De Data Broker Engine: hoeveel van de gevonden pagina's je gegevens noemen (naam, bevestigd
+  // telefoonnummer of e-mailadres), en of de zoekdienst alles kon geven (0 = mogelijk onvolledig).
+  addColumn(db, 'broker_checks', 'matched', 'INTEGER NOT NULL DEFAULT 0');
+  addColumn(db, 'broker_checks', 'complete', 'INTEGER NOT NULL DEFAULT 1');
 
   // Bij elke bevinding: uit welke bron, hoe zeker, en wanneer het voor het laatst is onderzocht
   // (anders dan updated_at, dat ook verandert als jij een keuze maakt).
@@ -217,8 +235,10 @@ function addColumn(db, table, column, type) {
 
 // node:sqlite heeft geen eigen "transaction". Met deze hulpfunctie lukt een
 // groep wijzigingen helemaal of helemaal niet. De functie moet synchroon zijn.
-export function inTransaction(db, work) {
-  db.exec('BEGIN');
+// BEGIN IMMEDIATE neemt meteen de schrijfrechten: een ander proces kan dan tussen ons lezen en schrijven
+// niets veranderen (voor tellen-en-reserveren in één keer, zie budget.js).
+export function inTransaction(db, work, { immediate = false } = {}) {
+  db.exec(immediate ? 'BEGIN IMMEDIATE' : 'BEGIN');
   try {
     const result = work();
     db.exec('COMMIT');
@@ -236,6 +256,7 @@ export function removeExpired(db, now = Date.now()) {
   db.prepare('DELETE FROM email_confirmations WHERE expires_at <= ?').run(now);
   db.prepare('DELETE FROM rate_limits WHERE reset_at <= ?').run(now);
   db.prepare('DELETE FROM phone_codes WHERE expires_at <= ?').run(now);
+  db.prepare('DELETE FROM budget_holds WHERE expires_at <= ?').run(now);
   db.prepare('DELETE FROM findings WHERE expires_at IS NOT NULL AND expires_at <= ?').run(now);
   pruneEvents(db, now);
   db.prepare("DELETE FROM jobs WHERE status IN ('done', 'failed') AND finished_at <= ?").run(now - JOB_DAYS * 24 * 60 * 60 * 1000);

@@ -25,6 +25,13 @@ export class JobError extends Error {
 
 const hasQueued = (db) => db.prepare("SELECT 1 FROM jobs WHERE status = 'queued' LIMIT 1").get() !== undefined;
 
+// De voortgang van een gestopt onderzoek: wat nog wachtte of liep, is niet gedaan.
+function stoppedSteps(steps) {
+  return steps.map((step) => (['pending', 'running'].includes(step.status)
+    ? { ...step, status: 'skipped', note: 'Niet gedaan: het onderzoek is gestopt.' }
+    : step));
+}
+
 export function createWorker({
   db, handlers, clock = Date.now, pollMs = 1000, log = console.error,
 }) {
@@ -50,8 +57,11 @@ export function createWorker({
         // Alleen de soort fout en de eerste regel, en alleen in de terminal.
         log(`Onderzoek ${job.id} mislukte (${error?.name ?? 'Error'}): ${String(error?.message ?? error).split('\n')[0].slice(0, 200)}`);
       }
-      finishJob(db, job.id, { status: 'failed', error: code }, clock());
-      logEvent(db, 'job_failed', { job: code }, clock());
+      // Gestopt is niet mislukt: dan bewaren we de voortgang tot waar hij kwam.
+      const cancelled = code === 'cancelled' || code === 'cancelled_admin';
+      finishJob(db, job.id, { status: 'failed', error: code, steps: cancelled ? stoppedSteps(steps) : null }, clock());
+      if (cancelled) logEvent(db, 'job_cancelled', { by: code === 'cancelled_admin' ? 'admin' : 'user' }, clock());
+      else logEvent(db, 'job_failed', { job: code }, clock());
     }
     return true;
   }

@@ -3,7 +3,7 @@
 
 <article class="card prose">
   <h1>Privacyverklaring</h1>
-  <p class="lead">Versie van 26 november 2026</p>
+  <p class="lead">Versie van 27 november 2026</p>
 
   <% if (!contact.name || !contact.email) { %>
     <p class="alert alert-warning" role="note">
@@ -74,8 +74,9 @@
       we hem onderzochten en hoe zeker het is dat hij over jou gaat. Bij een webresultaat
       bewaren we ook met welk gegeven het gevonden is (je naam, je telefoonnummer of je
       e-mailadres) en wat voor site het is. Per databroker of telefoongids uit ons register
-      bewaren we wanneer we voor het laatst keken, of dat lukte, hoeveel mogelijke vermeldingen
-      er waren en met welk gegeven.
+      bewaren we wanneer we voor het laatst keken, of dat lukte, hoeveel pagina's de zoekmachine
+      daar kende, hoeveel daarvan je gegevens noemen, met welk gegeven, en of de zoekdienst alles
+      kon geven.
       <% if (searchPolicy.configured && !searchPolicy.isDemo && !searchPolicy.retains) { %>
         <strong>De webresultaten zelf bewaren we maar <%= searchPolicy.keepMinutes %> minuten</strong>,
         omdat <%= searchPolicy.name %> niet toestaat dat we ze bewaren. Van jouw keuze per webresultaat
@@ -110,11 +111,37 @@
     e-mailadres van je account, en op het web op de naam van je account (en je woonplaats,
     als je die hebt ingevuld). Bij de Deep Scan zoeken we op je naam ook gericht bij
     databrokers en telefoongidsen, op sociale media en in openbare documenten (zoals pdf- en
-    Word-bestanden). Dat gaat allemaal via de zoekdienst: de sites zelf bezoeken we niet.
+    Word-bestanden). Dat zoeken gaat via de zoekdienst.
     <% if (smsAvailable) { %>Heb je je telefoonnummer met een code bevestigd, dan zoeken we ook op dat nummer.<% } %>
     Heb je het zelf aangezet, dan zoeken we ook op je e-mailadres. Er is geen zoekvak waarin je
     een andere naam kunt invullen, of het telefoonnummer van iemand anders: dat is bewust zo.
   </p>
+  <% if (pageCheck) { %>
+    <p>
+      <strong>Gevonden pagina's lezen we soms zelf.</strong> Bij de Deep Scan opent de server een paar van
+      de gewone webpagina's die je zoekopdrachten opleverden, om na te gaan of je gegevens er echt op staan.
+      Sites van databrokers, personenzoeksites en sociale media openen we niet, en een site die in robots.txt
+      vraagt om weg te blijven ook niet. De site die we bezoeken, ziet een bezoek van onze server, zonder
+      gegevens van jou. Van de pagina bewaren we alleen welke van je gegevens erop stonden en een kort stukje
+      tekst rond je naam, bij het webresultaat zelf: dat verdwijnt samen met het resultaat.
+    </p>
+  <% } %>
+  <% if (aiInfo) { %>
+    <p>
+      <strong>Een AI-model kijkt mee.</strong> Bij de Deep Scan beoordeelt een AI-model (<%= aiInfo.model %>,
+      via <%= aiInfo.provider %>) of de gevonden resultaten over jou lijken te gaan, en welke gegevens erin staan.
+      Daarvoor krijgt het je naam, je woonplaats, je bevestigde e-mailadres en telefoonnummer, en de tekst van de
+      resultaten en van de pagina's die we lazen.
+      <% if (aiInfo.local) { %>
+        Het model draait op dezelfde computer als deze site: er gaat niets naar een externe AI-dienst.
+      <% } else { %>
+        Het model draait op een andere computer (<%= sourceHost({ url: aiInfo.url }) %>): daar gaan die gegevens heen.
+      <% } %>
+      We gebruiken niets om een AI-model te trainen. Wat de AI vond (een inschatting en gegevens die letterlijk
+      in de tekst staan) bewaren we bij het webresultaat, en dat verdwijnt samen met het resultaat. De AI beslist
+      niets: of een resultaat over jou gaat, bepaal jij.
+    </p>
+  <% } %>
   <p>
     Op de startpagina kan <strong>iedereen een e-mailadres controleren</strong>, ook zonder
     account en ook het adres van iemand anders, zoals bij Have I Been Pwned zelf. We laten

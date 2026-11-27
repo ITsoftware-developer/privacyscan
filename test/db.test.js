@@ -30,7 +30,7 @@ test('openDatabase maakt de map, het bestand en de tabellen aan', () => {
 
     assert.ok(existsSync(path));
     assert.deepEqual(tables, [
-      'api_usage', 'broker_checks', 'email_confirmations', 'findings', 'jobs', 'phone_codes', 'rate_limits', 'scan_runs',
+      'api_usage', 'broker_checks', 'budget_holds', 'email_confirmations', 'findings', 'jobs', 'phone_codes', 'rate_limits', 'scan_runs',
       'scans', 'sessions', 'settings', 'system_events', 'users', 'web_choices',
     ]);
   } finally {

@@ -1,5 +1,6 @@
 // Het eigenlijke zoeken: vraag het aan een dienst, bewaar wat er terugkomt.
 import { DEMO_CONFIDENCE, rateWebResult } from './confidence.js';
+import { JobError } from './jobs/worker.js';
 import { classifyUrl } from './extract.js';
 import { recordScan, saveBreaches, saveWebResults } from './findings.js';
 import { WEB_RESULT_MS } from './retention.js';
@@ -54,6 +55,7 @@ export async function scanWeb({ db, user, search, allowed = true, now = Date.now
   try {
     raw = await search.search({ query, name: cleanName(user.name), city: cleanName(user.city, 60) });
   } catch (error) {
+    if (error instanceof JobError) throw error; // het onderzoek is gestopt
     // De details van de dienst houden we bij de bezoeker weg; alleen de soort fout geven we door.
     const code = error instanceof ScanError ? SEARCH_ERRORS[error.code] : null;
     throw new ScanError(code ?? 'search_failed');

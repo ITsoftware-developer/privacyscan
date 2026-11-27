@@ -9,7 +9,7 @@ import { openDatabase } from '../src/db.js';
 import { classifyUrl } from '../src/extract.js';
 import { saveWebResults, viaText } from '../src/findings.js';
 import {
-  BROKER_STATUSES, brokerOverview, brokersIn, recordBrokerCheck, recordBrokerFindings, scanBrokers,
+  BROKER_OUTCOMES, brokerOverview, brokersIn, recordBrokerCheck, recordBrokerFindings, scanBrokers,
 } from '../src/research/broker-scan.js';
 import {
   DOCUMENT_TYPES, SOCIAL_SITES, brokerQueries, documentsQuery, emailQuery, phoneQuery, socialQuery,
@@ -169,7 +169,7 @@ test('scanBrokers: per databroker gevonden of niet, en alleen resultaten op data
   assert.equal(overview.get('telefoonboek').checkedAt, 100);
   assert.equal(overview.get('detelefoongids').status, 'niet-gevonden');
   assert.equal(overview.get('pipl').status, 'afgeschermd');
-  assert.equal(overview.get('pipl').label, BROKER_STATUSES.afgeschermd.label);
+  assert.equal(overview.get('pipl').label, BROKER_OUTCOMES.afgeschermd.label);
 });
 
 test('scanBrokers: lukt één groepje niet, dan staat het als niet toegankelijk en lopen de andere door', async () => {
@@ -216,7 +216,7 @@ test('aan het eind van een scan telt elke databrokerpagina één keer, met alle 
   saveWebResults(db, user.id, [{ ...PAGE, url: 'https://example.org/blog' }], 50, { via: 'naam' }); // geen databroker
   saveWebResults(db, user.id, [{ ...PAGE, url: 'https://www.192.com/old' }], 40, { via: 'naam' }); // een eerdere scan
 
-  assert.deepEqual(recordBrokerFindings(db, user.id, 50).sort(), ['detelefoongids', 'telefoonboek']);
+  assert.deepEqual(recordBrokerFindings(db, user, 50).sort(), ['detelefoongids', 'telefoonboek']);
   const overview = new Map(brokerOverview(db, user.id).map((row) => [row.broker.id, row]));
   assert.deepEqual([overview.get('telefoonboek').found, overview.get('telefoonboek').via], [2, ['naam', 'telefoon']]);
   assert.deepEqual([overview.get('detelefoongids').status, overview.get('detelefoongids').via], ['gevonden', ['e-mail']]);
@@ -231,8 +231,10 @@ test('aan het eind van een scan telt elke databrokerpagina één keer, met alle 
 // --- De resultatenpagina ---------------------------------------------------------------------------------
 
 test('de resultatenpagina toont per databroker wat we weten, en bij elk webresultaat waarmee het gevonden is', async (t) => {
+  // Telefoonboek.nl: een pagina met je naam. Das Örtliche: een pagina zonder je naam.
+  const other = { title: 'Telefonbuch Utrecht', url: 'https://www.dasoertliche.de/utrecht', snippet: 'Alle Einträge in Utrecht.' };
   const search = fakeSearch({
-    results: (request) => (request.query.includes('site:telefoonboek.nl') ? [PAGE] : []),
+    results: (request) => (request.query.includes('site:telefoonboek.nl') ? [PAGE, other] : []),
   });
   const { db, base, mailer } = await startServer(t, { hibp: fakeHibp(), search });
   const cookie = await registerConfirmed(base, mailer, ANNA);
@@ -242,19 +244,90 @@ test('de resultatenpagina toont per databroker wat we weten, en bij elk webresul
   assert.equal((before.match(/Nog niet gecontroleerd\./g) ?? []).length, BROKERS.filter((broker) => broker.access === 'search').length);
   assert.match(before, /Afgeschermd: er zijn geen openbare pagina's om te doorzoeken/);
   assert.match(before, /Het register is nagekeken op 26 november 2026/);
+  assert.match(before, /We zien dus alleen wat een zoekmachine van\s+hen kent, niet wat er in hun eigen database staat/);
 
   await send(base, '/scan/deep', { method: 'POST', cookie });
   const html = await (await send(base, '/resultaten', { cookie })).text();
-  assert.match(html, /<span class="badge badge-warn">1 met een mogelijke vermelding<\/span>/);
+  assert.match(html, /<span class="badge badge-warn">1 met een overeenkomst<\/span>/);
   const item = html.slice(html.indexOf('id="broker-telefoonboek"'), html.indexOf('id="broker-dasoertliche"'));
-  assert.match(item, /state-warn">Mogelijke vermelding</);
-  assert.match(item, /Laatst gecontroleerd op .*:\s+1 pagina, gevonden via je naam\./s);
+  assert.match(item, /state-warn">Overeenkomst gevonden</);
+  assert.match(item, /Laatst gecontroleerd op .*:\s+1 pagina, waarvan 1 met je gegevens in de titel of het fragment, gevonden via je naam\./s);
   assert.match(item, /Verwerkt volgens eigen opgave: naam, telefoonnummer, adres\./);
   assert.match(item, /href="https:\/\/telefoonboek\.nl" target="_blank" rel="noopener noreferrer nofollow"/);
+  const oertliche = html.slice(html.indexOf('id="broker-dasoertliche"'), html.indexOf('id="broker-dastelefonbuch"'));
+  assert.match(oertliche, /state-idle">Mogelijk relevante pagina</);
+  assert.match(oertliche, /1 pagina, waarvan 0 met je gegevens in de titel of het fragment/);
   const gids = html.slice(html.indexOf('id="broker-detelefoongids"'), html.indexOf('id="broker-telefoonboek"'));
-  assert.match(gids, /state-ok">Niets gevonden</);
+  assert.match(gids, /state-idle">Niets in de zoekmachine</);
+  assert.match(gids, /Dat betekent niet dat ze niets over je hebben\./);
+  assert.doesNotMatch(html, /state-ok">Niets/); // "niets gevonden" is nooit groen
+  const pipl = html.slice(html.indexOf('id="broker-pipl"'));
+  assert.match(pipl, /state-idle">Database niet toegankelijk</);
   assert.match(html, /Gevonden via je naam<\/span>/);
   assert.equal(db.prepare("SELECT status FROM broker_checks WHERE broker_id = 'telefoonboek'").get().status, 'gevonden');
+});
+
+test('een databrokerpagina zonder je gegevens is alleen mogelijk relevant; je bevestigde nummer telt wel als overeenkomst', async () => {
+  const { db, user } = withUser();
+  db.prepare("UPDATE users SET phone = '+31612345678', phone_verified_at = 1").run();
+  const verified = { ...db.prepare('SELECT * FROM users').get() };
+  const pages = [
+    { title: 'Telefoonboek', url: 'https://www.telefoonboek.nl/x', snippet: 'Bel 06-12345678' }, // je nummer, niet je naam
+    { title: 'Telefoonboek', url: 'https://www.telefoonboek.nl/y', snippet: 'Familie de Vries in Utrecht' }, // je naam niet als geheel
+    { title: 'Spokeo', url: 'https://www.spokeo.com/z', snippet: 'People named Vries' },
+  ];
+  const search = fakeSearch({ results: (request) => pages.filter((page) => request.query.includes(`site:${new URL(page.url).hostname.replace('www.', '')}`)) });
+  const outcome = await scanBrokers({ db, user: verified, search, now: 7 });
+  assert.deepEqual(outcome.matched, ['telefoonboek']);
+  assert.deepEqual(outcome.possible, ['spokeo']);
+  const rows = new Map(brokerOverview(db, user.id).map((row) => [row.broker.id, row]));
+  assert.deepEqual([rows.get('telefoonboek').outcome, rows.get('telefoonboek').found, rows.get('telefoonboek').matched], ['overeenkomst', 2, 1]);
+  assert.deepEqual([rows.get('spokeo').outcome, rows.get('spokeo').matched], ['mogelijk', 0]);
+  assert.equal(rows.get('whitepages').outcome, 'niets');
+});
+
+test('geeft de zoekdienst voor een groepje het maximum, dan zoeken we per databroker apart', async () => {
+  const { db, user } = withUser();
+  const page = (domain, i) => ({ title: `Anna de Vries ${i}`, url: `https://www.${domain}/anna-${i}`, snippet: 'Anna de Vries' });
+  const europe = searchGroups()[0];
+  const search = fakeSearch({
+    results: (request) => {
+      const sites = [...request.query.matchAll(/site:(\S+)/g)].map((match) => match[1]);
+      if (sites.length > 1) return Array.from({ length: 20 }, (_, i) => page(sites[i % sites.length], i)); // vol
+      if (sites[0] === 'telefoonboek.nl') return Array.from({ length: 20 }, (_, i) => page('telefoonboek.nl', i + 100)); // ook vol
+      return [page(sites[0], 1)];
+    },
+  });
+  search.settings = { count: 20 };
+  const outcome = await scanBrokers({ db, user, search, now: 9 });
+
+  const groups = searchGroups().length;
+  assert.equal(search.calls.length, groups + BROKERS.filter((broker) => broker.access === 'search').length);
+  assert.equal(outcome.extra, BROKERS.filter((broker) => broker.access === 'search').length);
+  assert.ok(search.calls.slice(1, 1 + europe.length).every((call) => /^"Anna de Vries" site:\S+$/.test(call.query)));
+  // Wat ook apart nog vol zat, is mogelijk onvolledig; de rest niet.
+  assert.deepEqual(outcome.incomplete, ['telefoonboek']);
+  const rows = new Map(brokerOverview(db, user.id).map((row) => [row.broker.id, row]));
+  assert.equal(rows.get('telefoonboek').complete, false);
+  assert.equal(rows.get('detelefoongids').complete, true);
+  assert.ok(rows.get('telefoonboek').found > 20);
+});
+
+test('lukt apart zoeken niet (de kostengrens), dan staat het groepje als mogelijk onvolledig', async () => {
+  const { db, user } = withUser();
+  const europe = searchGroups()[0];
+  const search = fakeSearch({
+    results: (request) => {
+      if (!request.query.includes(' OR ')) throw new ScanError('budget_scan');
+      return Array.from({ length: 20 }, (_, i) => ({ title: 'Anna de Vries', url: `https://www.${europe[i % europe.length].domain}/a${i}`, snippet: 'Anna de Vries' }));
+    },
+  });
+  search.settings = { count: 20 };
+  const outcome = await scanBrokers({ db, user, search, now: 3 });
+  assert.equal(outcome.extra, 0);
+  assert.equal(outcome.error.code, 'search_budget_scan');
+  for (const broker of europe) assert.ok(outcome.incomplete.includes(broker.id), broker.id);
+  assert.ok(brokerOverview(db, user.id).filter((row) => europe.includes(row.broker)).every((row) => row.outcome === 'overeenkomst' && !row.complete));
 });
 
 test('op een openbare site zonder zoeken op naam zegt de kaart waarom er niets staat', async (t) => {

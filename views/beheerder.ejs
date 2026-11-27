@@ -194,7 +194,7 @@
     <% if (queue.active.length > 0) { %>
       <div class="admin-scroll">
         <table class="admin-table">
-          <thead><tr><th>Nr.</th><th>Account</th><th>Toestand</th><th>Stap</th><th>Sinds</th></tr></thead>
+          <thead><tr><th>Nr.</th><th>Account</th><th>Toestand</th><th>Stap</th><th>Sinds</th><th>Actie</th></tr></thead>
           <tbody>
             <% queue.active.forEach((job) => { const current = job.steps.find((step) => step.status === 'running'); %>
               <tr>
@@ -203,6 +203,15 @@
                 <td><span class="state state-<%= jobStatuses[job.status].tone %>"><%= jobStatuses[job.status].label %></span></td>
                 <td><%= current ? describeStep(current).title : '–' %> <span class="muted">(<%= job.steps.filter((step) => !['pending', 'running'].includes(step.status)).length %> van <%= job.steps.length %> klaar)</span></td>
                 <td><%= fmt.duration(now - (job.startedAt ?? job.createdAt)) %></td>
+                <td>
+                  <% if (job.cancelRequested) { %>
+                    <span class="muted">Wordt gestopt</span>
+                  <% } else { %>
+                    <form method="post" action="/beheerder/onderzoeken/<%= job.id %>/stoppen">
+                      <button type="submit" class="button button-quiet button-small">Stoppen</button>
+                    </form>
+                  <% } %>
+                </td>
               </tr>
             <% }) %>
           </tbody>
@@ -217,7 +226,11 @@
         <% }) %>
       </ul>
     <% } %>
-    <p class="hint">Een Deep Scan loopt op de achtergrond, één tegelijk. Na een herstart gaat wat liep terug in de wachtrij.</p>
+    <p class="hint">
+      Een Deep Scan loopt op de achtergrond, één tegelijk. Na een herstart gaat wat liep terug in de wachtrij.
+      Stoppen werkt meteen voor een onderzoek dat wacht; een onderzoek dat loopt, stopt voor de volgende stap of
+      aanvraag. Wat het al gevonden had, blijft bij de gebruiker staan.
+    </p>
 
     <h3>Nu bezig (losse scans)</h3>
     <% if (running.filter((run) => run.scan !== 'deep').length === 0) { %>
@@ -297,7 +310,7 @@
         <thead>
           <tr>
             <th>Databroker</th><th>Soort en landen</th><th>Verwerkt</th>
-            <th class="num">Accounts (30 dagen)</th><th class="num">Niet toegankelijk</th><th class="num">Overgeslagen</th><th>Laatst</th>
+            <th class="num">Accounts (30 dagen)</th><th class="num">Zoeken mislukt</th><th class="num">Overgeslagen</th><th class="num">Onvolledig</th><th>Laatst</th>
           </tr>
         </thead>
         <tbody>
@@ -312,6 +325,7 @@
               <td class="num"><%= fmt.number(row.checked) %></td>
               <td class="num"><%= fmt.number(row.failed) %></td>
               <td class="num"><%= fmt.number(row.skipped) %></td>
+              <td class="num"><%= fmt.number(row.incomplete) %></td>
               <td><% if (row.last) { %><span title="<%= formatDateTime(row.last) %>"><%= fmt.duration(now - row.last) %> geleden</span><% } else { %>—<% } %></td>
             </tr>
           <% }) %>
@@ -321,7 +335,8 @@
     <p class="hint">
       De naam van een databroker verwijst naar de bron waarmee we zijn gegevens hebben nagekeken. Per account bewaren we per
       databroker alleen de toestand, het aantal treffers en het tijdstip; hier staan bewust geen treffers, alleen of het
-      zoeken werkte.
+      zoeken werkte. Onvolledig: de zoekdienst gaf het maximum aantal resultaten, en per databroker apart zoeken kon niet
+      (meer) binnen de kostengrens.
     </p>
     <% if (brokerEngine.recognized.length > 0) { %>
       <details>

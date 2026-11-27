@@ -17,7 +17,7 @@ const breach = (title, dataClasses, extra = {}) => ({
   name: title, title, dataClasses, url: `https://example.com/${title.toLowerCase()}`, ...extra,
 });
 
-test('de tien stappen heten zoals in het plan, in die volgorde', () => {
+test('de twaalf stappen heten zoals in het plan, in die volgorde', () => {
   assert.deepEqual(STEP_DEFS.map((step) => step.title), [
     'Datalekdatabases onderzoeken',
     'Openbare internetbronnen onderzoeken',
@@ -26,13 +26,15 @@ test('de tien stappen heten zoals in het plan, in die volgorde', () => {
     'Openbare documenten zoeken',
     'Telefoonnummer onderzoeken',
     'E-mailadres op het web zoeken',
+    'Gevonden pagina\'s zelf controleren',
+    'AI-analyse en vervolgonderzoek',
     'Darkwebbronnen',
     'Mogelijke blootstelling beoordelen',
     'Bewijs controleren en combineren',
   ]);
   assert.deepEqual(STEP_DEFS.map((step) => step.id), [
-    'datalekken', 'web', 'databrokers', 'sociale-media', 'documenten', 'telefoon', 'e-mail', 'darkweb',
-    'blootstelling', 'verificatie',
+    'datalekken', 'web', 'databrokers', 'sociale-media', 'documenten', 'telefoon', 'e-mail', 'paginas', 'ai',
+    'darkweb', 'blootstelling', 'verificatie',
   ]);
   assert.equal(STEP_TITLES.databrokers, 'Databrokers controleren');
 });

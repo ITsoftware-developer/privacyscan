@@ -14,6 +14,8 @@ export const STEP_DEFS = [
   { id: 'documenten', title: 'Openbare documenten zoeken' },
   { id: 'telefoon', title: 'Telefoonnummer onderzoeken' },
   { id: 'e-mail', title: 'E-mailadres op het web zoeken' },
+  { id: 'paginas', title: 'Gevonden pagina\'s zelf controleren' },
+  { id: 'ai', title: 'AI-analyse en vervolgonderzoek' },
   { id: 'darkweb', title: 'Darkwebbronnen' },
   { id: 'blootstelling', title: 'Mogelijke blootstelling beoordelen' },
   { id: 'verificatie', title: 'Bewijs controleren en combineren' },

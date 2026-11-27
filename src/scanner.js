@@ -15,11 +15,16 @@ import {
   STEP_DEFS, STEP_TITLES, exposureFrom, exposureNote, verifyFindings, verifyNote,
 } from './engine.js';
 import { BROKERS, brokerById } from './brokers/registry.js';
-import { lastScan, listFindings, recordScan, saveRun } from './findings.js';
+import {
+  lastScan, listFindings, recordScan, saveRun,
+} from './findings.js';
+import { JobError } from './jobs/worker.js';
 import { brokersIn, recordBrokerFindings, scanBrokers } from './research/broker-scan.js';
 import {
   DOCUMENT_TYPES, SOCIAL_SITES, documentsQuery, emailQuery, phoneQuery, socialQuery,
 } from './research/queries.js';
+import { applyPageResult } from './research/page-check.js';
+import { PAGE_REASONS, offLimits } from './research/page-reader.js';
 import { searchAndSave } from './research/web-research.js';
 import { ScanError } from './scan-error.js';
 import { scanBreaches, scanWeb, searchSourceId } from './scans.js';
@@ -62,6 +67,8 @@ const NOT_TRIED = new Set([
 ]);
 
 function fromError(error, sources) {
+  // Het onderzoek is gestopt, of het account mag niet meer: dat is geen fout van een stap, dat stopt alles.
+  if (error instanceof JobError) throw error;
   if (error instanceof ScanError) {
     let status = 'skipped';
     if (error.code === 'no_key' || error.code === 'no_search') status = 'unavailable';
@@ -164,10 +171,25 @@ async function brokerStep({
     });
     for (const result of outcome.results) web.urls.add(result.url);
     web.added += outcome.added;
-    const names = outcome.withHits.map((id) => brokerById(id)?.name ?? id);
-    let note = outcome.found === 0
-      ? `Bij ${plural(outcome.checked, 'databroker', 'databrokers')} niets gevonden op je naam.`
-      : `${plural(outcome.found, 'mogelijke vermelding', 'mogelijke vermeldingen')} op je naam bij ${names.join(', ')}. Een vermelding kan van een naamgenoot zijn: kijk zelf.`;
+    const names = (ids) => ids.map((id) => brokerById(id)?.name ?? id).join(', ');
+    const parts = [];
+    if (outcome.matched.length > 0) {
+      parts.push(`Overeenkomst met je naam bij ${names(outcome.matched)}: daar noemt de titel of het fragment van een pagina je volledige naam. Dat kan een naamgenoot zijn; kijk zelf.`);
+    }
+    if (outcome.possible.length > 0) {
+      parts.push(`Alleen een mogelijk relevante pagina (je naam staat niet in de titel of het fragment) bij ${names(outcome.possible)}.`);
+    }
+    const nothing = outcome.checked - outcome.withHits.length;
+    if (nothing > 0) {
+      parts.push(`Bij ${plural(nothing, 'databroker', 'databrokers')} gaf de zoekmachine niets. Dat betekent niet dat ze niets over je hebben: wat niet in een zoekmachine staat, zien we niet.`);
+    }
+    if (outcome.extra > 0) {
+      parts.push(`Een zoekopdracht gaf het maximum aantal resultaten, dus is er per databroker apart gezocht (${plural(outcome.extra, 'extra zoekopdracht', 'extra zoekopdrachten')}).`);
+    }
+    if (outcome.incomplete.length > 0) {
+      parts.push(`Mogelijk onvolledig bij ${names(outcome.incomplete)}: de zoekdienst gaf daar het maximum aantal resultaten.`);
+    }
+    let note = parts.join(' ');
     if (outcome.error) note += ` Niet alle databrokers konden worden doorzocht: ${(REASONS[outcome.error.code] ?? REASONS.unexpected).toLowerCase()}`;
     if (closed.length > 0) note += ` Afgeschermd (niet te doorzoeken): ${closed.join(', ')}.`;
     if (search.isDemo) note = 'Demo: de nepzoekdienst kent geen databrokers, dus er is niets gevonden. Dit is geen echte controle.';
@@ -177,6 +199,54 @@ async function brokerStep({
   } catch (error) {
     return fromError(error, [sourceId]);
   }
+}
+
+// --- Gevonden pagina's zelf controleren (zie research/page-reader.js) ----------------------------------
+
+export const PAGES_PER_SCAN = 6;
+
+
+async function pageStep({
+  db, user, reader, search, now, pages,
+}) {
+  if (!reader) return { status: 'unavailable', sources: [], note: 'Pagina\'s zelf lezen staat uit op deze site (PAGE_CHECK=off).' };
+  if (!search || search.isDemo) {
+    return { status: 'skipped', sources: [], note: 'Er zijn geen echte webresultaten om te openen (geen zoekdienst, of de demo).' };
+  }
+  const items = listFindings(db, user.id, now).web.filter((item) => item.checked_at === now);
+  const candidates = items.filter((item) => !offLimits(item.url)).slice(0, PAGES_PER_SCAN);
+  const skippedOnPurpose = items.filter((item) => offLimits(item.url)).length;
+  if (candidates.length === 0) {
+    return {
+      status: 'skipped',
+      sources: [],
+      note: items.length === 0
+        ? 'Er zijn geen webresultaten om te openen.'
+        : 'Er waren alleen databrokers, personenzoeksites en sociale media; die lezen we bewust niet (hun voorwaarden verbieden het).',
+    };
+  }
+  const counts = {};
+  let withData = 0;
+  let without = 0;
+  for (const item of candidates) {
+    const result = await reader.read(item.url);
+    counts[result.status] = (counts[result.status] ?? 0) + 1;
+    const outcome = applyPageResult({
+      db, user, item, result, now, pages,
+    });
+    if (outcome === 'met-gegevens') withData += 1;
+    else if (outcome === 'zonder-gegevens') without += 1;
+  }
+  const read = counts.gelezen ?? 0;
+  const parts = [`${plural(read, 'pagina', "pagina's")} zelf gelezen`];
+  if (read > 0) parts[0] += `: op ${withData} daarvan staan je gegevens echt, op ${without} niet (meer)`;
+  const notRead = Object.entries(counts).filter(([status]) => status !== 'gelezen')
+    .map(([status, count]) => `${count} ${PAGE_REASONS[status] ?? status}`);
+  let note = `${parts[0]}.`;
+  if (notRead.length > 0) note += ` Niet gelezen: ${notRead.join(', ')}.`;
+  if (skippedOnPurpose > 0) note += ` ${plural(skippedOnPurpose, 'resultaat', 'resultaten')} op een databrokersite of sociale media bewust niet geopend.`;
+  if (items.length - skippedOnPurpose > PAGES_PER_SCAN) note += ` Hooguit ${PAGES_PER_SCAN} pagina's per Deep Scan.`;
+  return { status: read > 0 ? 'done' : 'unreachable', sources: [], note };
 }
 
 const DARKWEB_NOTE = 'Niet beschikbaar: er is geen geautoriseerde aanbieder gekoppeld. We bouwen geen eigen darkweb-crawler en kopen of bewaren geen gestolen gegevens.';
@@ -190,6 +260,22 @@ function combinedNote(web) {
   return ` Combineren: ${plural(multi, 'webresultaat is', 'webresultaten zijn')} met meer dan één van je gegevens gevonden, en ${plural(strong, 'is een sterke overeenkomst', 'zijn een sterke overeenkomst')} (je bevestigde e-mailadres of telefoonnummer staat erin).`;
 }
 
+// Een bron met een controlepunt ervoor: voor elke aanvraag (`method`) eerst `check()`. Zo merkt een lopend
+// onderzoek meteen dat het gestopt is, of dat het account geblokkeerd of verwijderd is.
+function checkpointed(target, method, check) {
+  if (!target) return target;
+  return new Proxy(target, {
+    get: (object, property, receiver) => {
+      const value = Reflect.get(object, property, receiver);
+      if (property !== method || typeof value !== 'function') return value;
+      return async (...args) => {
+        check();
+        return value.apply(object, args);
+      };
+    },
+  });
+}
+
 // De stappen zoals ze op de pagina staan voordat er iets loopt: allemaal "wacht".
 export function plannedSteps() {
   return STEP_DEFS.map((def) => ({ id: def.id, title: def.title, status: 'pending', sources: [], note: '' }));
@@ -200,9 +286,25 @@ export function plannedSteps() {
 //   allowWeb    mag er op naam gezocht worden? (Dat bepaalt de aanroeper, zie owner.js.)
 //   onProgress  krijgt na elke stap alle stappen: de gedane, de stap die nu loopt en wat nog wacht
 //               (voor de voortgang van de onderzoekswachtrij, zie jobs/).
+//   checkpoint  leest het account opnieuw, voor elke stap en elke aanvraag aan een bron (zie
+//               research/orchestrator.js). Gooit het een JobError (gestopt, geblokkeerd, verwijderd),
+//               dan stopt de scan. Zo gebruikt elke stap de gegevens en toestemmingen van NU: wie
+//               tijdens het onderzoek zijn nummer verwijdert of zoeken op zijn e-mailadres uitzet,
+//               wordt daar niet meer op onderzocht.
 export async function runDeepScan({
-  db, user, hibp, search, allowWeb, now = Date.now(), onProgress = () => {},
+  db, user: startUser, hibp: rawHibp, search: rawSearch, allowWeb, now = Date.now(), onProgress = () => {}, checkpoint = null,
+  pageReader = null, ai = null,
 }) {
+  let user = startUser;
+  const refresh = () => {
+    if (checkpoint) user = checkpoint();
+    return user;
+  };
+  const search = checkpointed(rawSearch, 'search', refresh);
+  const hibp = checkpointed(rawHibp, 'breachesFor', refresh);
+  const reader = checkpointed(pageReader, 'read', refresh);
+  // De tekst van de gelezen pagina's, per webresultaat, alleen in het geheugen en alleen voor deze scan.
+  const pages = new Map();
   const steps = [];
   const report = () => onProgress([
     ...steps,
@@ -216,11 +318,13 @@ export async function runDeepScan({
   };
   report();
 
+  refresh();
   add('datalekken', await breachStep({ db, user, hibp, now }));
 
   // Het webonderzoek: je naam (met woonplaats), databrokers, sociale media, documenten, je bevestigde
   // telefoonnummer en, als je dat wilt, je e-mailadres. `web` telt de unieke adressen voor de samenvatting.
   const web = { urls: new Set(), added: 0 };
+  refresh();
   const nameStep = await webStep({ db, user, search, allowWeb, now });
   if (nameStep.status === 'done') {
     const latest = lastScan(db, user.id, 'web');
@@ -232,28 +336,29 @@ export async function runDeepScan({
     }
   }
   add('web', nameStep);
+  refresh();
   add('databrokers', await brokerStep({
     db, user, search, allowWeb, now, web,
   }));
-  const shared = {
-    db, user, search, now, web,
-  };
+  const shared = () => ({
+    db, user: refresh(), search, now, web,
+  });
   add('sociale-media', await searchStep({
-    ...shared,
+    ...shared(),
     ready: allowWeb ? true : 'search_disabled',
     query: socialQuery(user.name),
     via: 'naam',
     describe: (count, added) => foundText(count, added, `op sociale media (${SOCIAL_SITES.join(', ')})`),
   }));
   add('documenten', await searchStep({
-    ...shared,
+    ...shared(),
     ready: allowWeb ? true : 'search_disabled',
     query: documentsQuery(user.name),
     via: 'naam',
     describe: (count, added) => foundText(count, added, `in openbare documenten (${DOCUMENT_TYPES.join(', ')})`),
   }));
   add('telefoon', await searchStep({
-    ...shared,
+    ...shared(),
     ready: user.phone && user.phone_verified_at ? true : 'no_phone',
     query: phoneQuery(user.phone_verified_at ? user.phone : null),
     via: 'telefoon',
@@ -261,16 +366,29 @@ export async function runDeepScan({
     describe: (count, added) => foundText(count, added, 'met je bevestigde telefoonnummer'),
   }));
   add('e-mail', await searchStep({
-    ...shared,
+    ...shared(),
     ready: user.email_web_at ? true : 'no_email_consent',
     query: emailQuery(user.email),
     via: 'e-mail',
     describe: (count, added) => foundText(count, added, 'met je e-mailadres'),
   }));
+  refresh();
+  add('paginas', await pageStep({
+    db, user, reader, search, now, pages,
+  }));
+  refresh();
+  add('ai', ai ? await ai.run({
+    db, user, search, now, pages, refresh, reader,
+  }) : {
+    status: 'unavailable',
+    sources: [],
+    note: 'Er is geen AI ingesteld. Zet AI_PROVIDER=ollama in je .env om een lokaal model mee te laten kijken (zie de README).',
+  });
+  refresh();
   add('darkweb', { status: 'unavailable', sources: [], note: DARKWEB_NOTE });
 
   // Per databroker de unieke pagina's van deze scan, met elk gegeven waarmee ze gevonden zijn.
-  recordBrokerFindings(db, user.id, now);
+  recordBrokerFindings(db, user, now);
 
   // Wat het webonderzoek samen vond, als de laatste webzoekopdracht van dit account.
   const searched = steps.some((step) => ['web', 'databrokers', 'sociale-media', 'documenten', 'telefoon', 'e-mail'].includes(step.id)

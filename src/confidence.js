@@ -84,6 +84,27 @@ function containsAddress(text, email) {
   return new RegExp(`(?<![a-z0-9._%+-])${escaped}(?![a-z0-9-]|\\.[a-z0-9])`).test(String(text).toLowerCase());
 }
 
+// Welke van je gegevens staan letterlijk in deze tekst? Je volledige naam (als geheel, niet de losse
+// delen), je woonplaats, je bevestigde e-mailadres en je bevestigde telefoonnummer (de aanroeper geeft
+// alleen een bevestigd nummer mee). Voor de Data Broker Engine: een pagina op een databrokersite waar
+// geen van je naam, e-mailadres of telefoonnummer in staat, is alleen "mogelijk relevant".
+export function matchesIn(text, {
+  name, city = null, email = null, phone = null,
+}) {
+  const folded = ` ${fold(text)} `;
+  const hasPhrase = (phrase) => phrase !== '' && folded.includes(` ${phrase} `);
+  return {
+    naam: hasPhrase(fold(name)),
+    woonplaats: Boolean(city) && hasPhrase(fold(city)),
+    email: containsAddress(String(text ?? ''), email),
+    telefoon: containsPhone(text, phone),
+  };
+}
+
+// Is dit een overeenkomst met jou: je naam, je e-mailadres of je telefoonnummer? (Je woonplaats alleen
+// is dat niet.)
+export const isMatch = (matches) => matches.naam || matches.email || matches.telefoon;
+
 // Beoordeelt een webresultaat aan de hand van alleen de titel en het fragment dat de
 // zoekdienst teruggaf (de pagina zelf lezen we niet). Het blijft een MOGELIJKE overeenkomst:
 //   hoog       je bevestigde e-mailadres staat letterlijk in de titel of het fragment, of je

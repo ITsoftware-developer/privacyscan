@@ -64,6 +64,7 @@ export const CATEGORIES = {
   databrokers: 'Databrokers',
   social: 'Sociale media',
   documenten: 'Openbare documenten',
+  ai: 'AI-analyse',
   darkweb: 'Darkweb via geautoriseerde bronnen',
 };
 
@@ -81,9 +82,9 @@ export const STATE_LABELS = {
 export const PHASES = [
   { number: 1, name: 'Veilig fundament', short: 'Fundament', done: true, text: 'Registreren, inloggen, e-mailadres bevestigen, database en dashboard.' },
   { number: 2, name: 'Breach Intelligence Engine', short: 'Datalekken', done: true, text: 'Bekende datalekken en blootgestelde persoonsgegevens opsporen, met twee bronnen. Darkwebbronnen volgen zodra er een geautoriseerde aanbieder is.' },
-  { number: 3, name: 'Data Broker Engine', short: 'Databrokers', done: true, text: 'Gegevens bij databrokers onderzoeken via toegestane bronnen: gerichte zoekopdrachten op een register van bekende personenzoeksites en telefoongidsen, met per databroker wat ze verwerken, waar en hoe we ze mogen onderzoeken.' },
-  { number: 4, name: 'Deep Research Engine', short: 'Deep Research', done: false, text: 'Uitgebreid onderzoek van openbare internetbronnen en documenten. Werkt al: de zoekdienst (Brave Search), sociale media, documenten, je bevestigde telefoonnummer en, als je dat wilt, je e-mailadres, op de achtergrond met voortgang en een kostengrens. Nog niet: de gevonden pagina\'s zelf lezen en beoordelen.' },
-  { number: 5, name: 'Eigen AI-agent', short: 'AI-agent', done: false, text: 'Zelfstandig onderzoek plannen, uitvoeren, controleren en rapporteren.' },
+  { number: 3, name: 'Data Broker Engine', short: 'Databrokers', done: false, text: 'Begonnen: gerichte zoekopdrachten via de zoekdienst bij een register van bekende personenzoeksites en telefoongidsen, met per databroker wat ze verwerken en of er een overeenkomst met je gegevens is. Nog niet: hun pagina\'s zelf lezen, geautoriseerde koppelingen met databrokers, en gegevens die niet in een zoekmachine staan.' },
+  { number: 4, name: 'Deep Research Engine', short: 'Deep Research', done: false, text: 'Uitgebreid onderzoek van openbare internetbronnen en documenten. Werkt al: de zoekdienst (Brave Search), sociale media, documenten, je bevestigde telefoonnummer en, als je dat wilt, je e-mailadres, op de achtergrond met voortgang en een kostengrens. Sinds 0.9.0 ook: gevonden gewone webpagina\'s zelf lezen. Nog niet: pdf- en andere documenten openen.' },
+  { number: 5, name: 'Eigen AI-agent', short: 'AI-agent', done: false, text: 'Begonnen: een lokaal AI-model (Ollama) kiest welke gevonden pagina\'s we nog lezen en beoordeelt de resultaten, met alleen gegevens die letterlijk in de tekst staan. Nog niet: zelf zoekopdrachten plannen en een eigen rapport schrijven.' },
   { number: 6, name: 'Continuous Monitoring', short: 'Monitoring', done: false, text: 'Automatisch opnieuw scannen en waarschuwen bij nieuwe bevindingen.' },
 ];
 
@@ -169,6 +170,24 @@ const REGISTER = [
     needs: 'Een zoekdienst (BRAVE_API_KEY) en jouw toestemming: je zet het zelf aan bij Zoekgegevens, want dan gaat je e-mailadres naar de zoekdienst.',
   },
   {
+    id: 'paginas',
+    category: 'web',
+    phase: 4,
+    name: 'Gevonden pagina\'s zelf lezen',
+    url: null,
+    gives: 'Of je gegevens echt op een gevonden webpagina staan, en niet alleen in het fragment van de zoekmachine.',
+    needs: 'Staat standaard aan (PAGE_CHECK=off zet het uit). Geen databrokers en sociale media, en robots.txt geldt.',
+  },
+  {
+    id: 'ai',
+    category: 'ai',
+    phase: 5,
+    name: 'AI-model (Ollama)',
+    url: 'https://ollama.com',
+    gives: 'Een inschatting of een resultaat over jou gaat, en welke gegevens erin staan, alleen als die letterlijk in de tekst staan. De AI kiest ook welke gevonden pagina\'s we nog lezen.',
+    needs: 'Ollama op je eigen computer en AI_PROVIDER=ollama in je .env (zie de README).',
+  },
+  {
     id: 'darkweb',
     category: 'darkweb',
     phase: 2,
@@ -184,8 +203,10 @@ const REGISTER = [
 //   hasKey        kan de site echte adressen controleren (HIBP-sleutel of de gratis dienst)?
 //   search        de zoekdienst voor het web, of null
 //   sms           kan de site een code per sms sturen (zie sms.js)? Zonder sms geen bevestigd telefoonnummer.
+//   pageCheck     leest de site gevonden pagina's zelf (zie research/page-reader.js)?
+//   ai            de AI-agent (zie ai/agent.js), of null
 export function describeRegister({
-  emailSources = ['hibp'], hasKey = false, search = null, sms = false,
+  emailSources = ['hibp'], hasKey = false, search = null, sms = false, pageCheck = false, ai = null,
 } = {}) {
   const hibpKey = hasKey && emailSources.includes('hibp');
   const xonOn = emailSources.includes('xon');
@@ -228,6 +249,12 @@ export function describeRegister({
       ? viaSearch('In de Deep Scan één zoekopdracht met de schrijfwijzen van je nummer, maar alleen als je het met een sms-code hebt bevestigd (bij Zoekgegevens). Een bevestigd e-mailadres bewijst niet dat een nummer van jou is.')
       : { state: 'niet-ingesteld', note: 'Er is nog geen sms-dienst gekoppeld, dus niemand kan hier een telefoonnummer bevestigen. Zonder bevestiging onderzoeken we geen nummer.' },
     'email-web': viaSearch('In de Deep Scan één zoekopdracht op je e-mailadres, maar alleen als je dat zelf aanzet bij Zoekgegevens.'),
+    paginas: pageCheck
+      ? viaSearch('In de Deep Scan lezen we hooguit een paar gevonden gewone webpagina\'s zelf, en kijken we of je gegevens erop staan.')
+      : { state: 'uit', note: 'Staat uit (PAGE_CHECK=off). Dan zien we alleen het fragment van de zoekmachine.' },
+    ai: ai
+      ? { state: 'actief', note: `Het model ${ai.model} via ${ai.providerName}${ai.local ? ', op deze computer: er gaat niets naar een externe AI-dienst' : `, op ${new URL(ai.url).host}`}.` }
+      : { state: 'niet-ingesteld', note: 'Er is geen AI ingesteld. Met Ollama op je eigen computer en AI_PROVIDER=ollama in je .env kijkt een lokaal model mee.' },
   };
 
   return REGISTER.map((entry) => ({

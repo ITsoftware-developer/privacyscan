@@ -69,6 +69,8 @@ test('de bronnenpagina is openbaar en zegt eerlijk wat werkt en wat nog niet bes
     'Openbare documenten': 'Demo (nepdata)',
     'Je telefoonnummer': 'Demo (nepdata)',
     'Je e-mailadres op het web': 'Demo (nepdata)',
+    'Gevonden pagina&#39;s zelf lezen': 'Uit', // zoals in de html (de apostrof is ge-escaped)
+    'AI-model (Ollama)': 'Niet ingesteld',
     Darkwebmonitoring: 'Gepland',
   });
   assert.match(READABLE(html), /Alleen wat hier Actief heet, werkt echt\./);
@@ -91,7 +93,7 @@ test('met de gratis dienst aan is XposedOrNot actief, en HIBP nog steeds niet', 
   assert.equal(registry['Have I Been Pwned'], 'Alleen testadressen');
 });
 
-test('de roadmap heeft zes fases, waarvan er drie klaar zijn, en belooft geen verwijderdienst', async (t) => {
+test('de roadmap heeft zes fases, waarvan er twee klaar zijn, en belooft geen verwijderdienst', async (t) => {
   const { base } = await startServer(t, { hibp: fakeHibp() });
   const html = await (await send(base, '/bronnen')).text();
   const text = READABLE(html);
@@ -101,7 +103,7 @@ test('de roadmap heeft zes fases, waarvan er drie klaar zijn, en belooft geen ve
   assert.deepEqual(phases, [
     ['1', 'Veilig fundament', 'Klaar'],
     ['2', 'Breach Intelligence Engine', 'Klaar'],
-    ['3', 'Data Broker Engine', 'Klaar'],
+    ['3', 'Data Broker Engine', 'Gepland'],
     ['4', 'Deep Research Engine', 'Gepland'],
     ['5', 'Eigen AI-agent', 'Gepland'],
     ['6', 'Continuous Monitoring', 'Gepland'],

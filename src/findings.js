@@ -154,6 +154,18 @@ export function limitRetention(db, sourceId, now = Date.now()) {
   return Number(result.changes);
 }
 
+// Voegt iets toe aan een webresultaat van dit account dat nog bestaat: details erbij (bijvoorbeeld wat er op
+// de pagina zelf stond, of de inschatting van de AI), en eventueel een nieuwe zekerheid. Geeft false als het
+// resultaat er niet (meer) is.
+export function updateWebFinding(db, userId, id, { details: patch = {}, level = null, note = null } = {}, now = Date.now()) {
+  const row = db.prepare(`SELECT details FROM findings WHERE id = ? AND user_id = ? AND kind = 'web' AND ${LIVE}`).get(id, userId, now);
+  if (!row) return false;
+  const details = { ...parseDetails(row.details), ...patch };
+  db.prepare(`UPDATE findings SET details = ?, confidence = COALESCE(?, confidence), confidence_note = COALESCE(?, confidence_note)
+              WHERE id = ? AND user_id = ?`).run(JSON.stringify(details), level, note, id, userId);
+  return true;
+}
+
 // Met welk gegeven een webresultaat gevonden is (details.via), voor in de pagina's.
 export const VIA_LABELS = { naam: 'je naam', telefoon: 'je telefoonnummer', 'e-mail': 'je e-mailadres' };
 

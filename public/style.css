@@ -248,6 +248,9 @@ code { font-size: 0.9em; background: rgb(0 0 0 / 5%); padding: 1px 5px; border-r
 .profile-button { margin-top: 12px; }
 .profile-part .card-text + .card-text, .profile-part .card-text + .alert { margin-top: 12px; }
 .profile-status { margin: 12px 0 0; }
+.stop-form { margin: 10px 0 0; }
+.page-check, .ai-check { margin: 10px 0 0; }
+.page-excerpt { margin: 6px 0 0; padding: 8px 12px; font-size: 0.9rem; color: var(--text); background: var(--bg); border-left: 3px solid var(--border); border-radius: 0 8px 8px 0; overflow-wrap: anywhere; }
 .link-danger { color: var(--error); }
 
 /* Resultaten */

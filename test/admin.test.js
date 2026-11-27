@@ -146,10 +146,10 @@ test('de beheerpagina toont alle onderdelen, maar geen namen, woonplaatsen, zoek
   // Wel: de accounts (met e-mailadres), tellers en het log.
   assert.match(text, /anna@example\.com/);
   assert.match(text, /Webzoekopdracht: 2 gevonden, 2 nieuw/);
-  assert.match(text, /Deep Scan: \d+ van 10 stappen voltooid/);
+  assert.match(text, /Deep Scan: \d+ van 12 stappen voltooid/);
   assert.match(text, /Jij \(beheerder\)/);
   assert.match(text, /Nog niet gebouwd/);
-  assert.match(text, /Er is nog geen AI-model gekoppeld/);
+  assert.match(text, /Er is geen AI ingesteld\. Met AI_PROVIDER=ollama in je \.env kijkt een lokaal model mee/);
   // Niet: wat er over Anna gevonden is, haar naam, woonplaats of zoekopdracht.
   for (const secret of ['Anna de Vries', 'Utrecht', CLUB.url, GIDS.url, CLUB.title, GIDS.snippet, 'clubkampioenschappen']) {
     assert.ok(!text.includes(secret), `"${secret}" staat op de beheerpagina`);

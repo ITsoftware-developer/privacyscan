@@ -118,6 +118,10 @@ export function createPublicRoutes({ db, hibp, search = null, checkLimit, monito
         hasKey: Boolean(hibp.hasKey),
         search,
         sms: Boolean(req.app.locals.smsAvailable),
+        pageCheck: Boolean(req.app.locals.pageCheck),
+        ai: req.app.locals.aiInfo ? {
+          model: req.app.locals.aiInfo.model, providerName: req.app.locals.aiInfo.provider, url: req.app.locals.aiInfo.url, local: req.app.locals.aiInfo.local,
+        } : null,
       }),
       phases: PHASES,
       wide: true,

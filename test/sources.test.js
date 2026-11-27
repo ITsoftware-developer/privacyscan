@@ -114,7 +114,7 @@ test('wat nog niet bestaat, wordt nooit "actief", wat er ook is ingesteld', () =
 test('elk onderdeel van het register heeft een naam, een categorie, een uitleg en een stand in tekst', () => {
   const register = describeRegister({ emailSources: ['xon'], hasKey: true, search: { isDemo: true } });
   assert.deepEqual(register.map((item) => item.id), [
-    'hibp', 'xon', 'pwned-passwords', 'search', 'databrokers', 'social', 'documenten', 'telefoon', 'email-web', 'darkweb',
+    'hibp', 'xon', 'pwned-passwords', 'search', 'databrokers', 'social', 'documenten', 'telefoon', 'email-web', 'paginas', 'ai', 'darkweb',
   ]);
   for (const item of register) {
     assert.ok(item.name && item.gives, item.id);
@@ -124,9 +124,11 @@ test('elk onderdeel van het register heeft een naam, een categorie, een uitleg e
   }
 });
 
-test('de roadmap heeft zes fases, en fase 1, 2 en 3 staan op klaar', () => {
+test('de roadmap heeft zes fases, en fase 1 en 2 staan op klaar', () => {
   assert.deepEqual(PHASES.map((phase) => phase.number), [1, 2, 3, 4, 5, 6]);
-  assert.deepEqual(PHASES.filter((phase) => phase.done).map((phase) => phase.number), [1, 2, 3]);
+  // Fase 3 is begonnen, niet klaar: we zien alleen wat een zoekmachine van databrokers kent.
+  assert.deepEqual(PHASES.filter((phase) => phase.done).map((phase) => phase.number), [1, 2]);
+  assert.match(PHASES[2].text, /^Begonnen: .* Nog niet: /);
   assert.deepEqual(PHASES.map((phase) => phase.name), [
     'Veilig fundament', 'Breach Intelligence Engine', 'Data Broker Engine',
     'Deep Research Engine', 'Eigen AI-agent', 'Continuous Monitoring',
@@ -155,4 +157,19 @@ test('je telefoonnummer staat in het register als niet ingesteld zolang er geen 
   assert.equal(stateOf(describeRegister({ search: null, sms: true }), 'telefoon'), 'niet-ingesteld');
   assert.equal(stateOf(describeRegister({ search, sms: true }), 'email-web'), 'actief');
   assert.match(entry(describeRegister({ search }), 'email-web').note, /alleen als je dat zelf aanzet/);
+});
+
+test('pagina\'s lezen en de AI staan in het register zoals ze echt zijn ingesteld', () => {
+  const search = { isDemo: false, name: 'echt' };
+  assert.equal(stateOf(describeRegister({ search }), 'paginas'), 'uit');
+  assert.equal(stateOf(describeRegister({ search, pageCheck: true }), 'paginas'), 'actief');
+  assert.equal(stateOf(describeRegister({ search: null, pageCheck: true }), 'paginas'), 'niet-ingesteld');
+  assert.equal(stateOf(describeRegister({ search }), 'ai'), 'niet-ingesteld');
+  const ai = {
+    model: 'qwen3:8b', providerName: 'Ollama', url: 'http://127.0.0.1:11434', local: true,
+  };
+  const withAi = describeRegister({ search, ai });
+  assert.equal(stateOf(withAi, 'ai'), 'actief');
+  assert.match(entry(withAi, 'ai').note, /qwen3:8b via Ollama, op deze computer: er gaat niets naar een externe AI-dienst/);
+  assert.match(entry(describeRegister({ search, ai: { ...ai, url: 'http://192.168.1.20:11434', local: false } }), 'ai').note, /op 192\.168\.1\.20:11434/);
 });

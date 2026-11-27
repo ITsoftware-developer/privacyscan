@@ -242,7 +242,7 @@ test('de Deep Scan loopt op de achtergrond: voortgang op de pagina, en de pagina
   const done = await (await send(base, '/resultaten?gescand=deep', { cookie })).text();
   assert.doesNotMatch(done, /http-equiv="refresh"/);
   assert.match(done, /Rapport van je laatste Deep Scan/);
-  assert.match(done, /Deep Scan klaar: \d+ van 10 stappen voltooid/);
+  assert.match(done, /Deep Scan klaar: \d+ van 12 stappen voltooid/);
   assert.equal(db.prepare('SELECT status FROM jobs').get().status, 'done');
 });
 
@@ -270,4 +270,133 @@ test('een mislukt onderzoek staat eerlijk op de resultatenpagina, en de knop wer
   await send(base, '/scan/deep', { method: 'POST', cookie });
   await jobs.drain();
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE status = 'done'").get().n, 1);
+});
+
+// --- Stoppen, en het account opnieuw lezen tijdens het onderzoek -------------------------------------
+
+// Een zoekdienst die bij de zoveelste aanvraag iets laat gebeuren (bijvoorbeeld: de gebruiker stopt het
+// onderzoek), en daarna gewoon antwoordt.
+function searchThatDoes(at, action) {
+  const search = fakeSearch({
+    results: () => {
+      if (search.calls.length === at) action();
+      return [CLUB];
+    },
+  });
+  return search;
+}
+
+test('een onderzoek in de wachtrij stoppen: meteen gestopt, er wordt niets gezocht', async (t) => {
+  const search = fakeSearch({ results: [CLUB] });
+  const { base, db, mailer, jobs } = await startServer(t, { runJobsInline: false, hibp: fakeHibp(), search });
+  const cookie = await registerConfirmed(base, mailer, ANNA);
+  await send(base, '/scan/deep', { method: 'POST', cookie });
+
+  const stop = await send(base, '/scan/deep/stoppen', { method: 'POST', cookie });
+  assert.equal(stop.headers.get('location'), '/resultaten?gestopt#rapport');
+  await jobs.drain();
+  assert.equal(search.calls.length, 0);
+  assert.deepEqual({ ...db.prepare('SELECT status, error, cancel_requested FROM jobs').get() }, { status: 'failed', error: 'cancelled', cancel_requested: 'user' });
+  const page = await (await send(base, '/resultaten?gestopt', { cookie })).text();
+  assert.match(page, /Je Deep Scan is gestopt\. Wat hij al gevonden had, staat hieronder\./);
+  assert.match(page, /Je gestopte Deep Scan/);
+  assert.doesNotMatch(page, /http-equiv="refresh"/);
+  assert.ok(listEvents(db, { limit: 20 }).some((event) => event.text === 'Een onderzoek op de achtergrond is gestopt door de gebruiker zelf.'));
+  // Daarna kan er gewoon een nieuwe.
+  assert.equal((await send(base, '/scan/deep', { method: 'POST', cookie })).status, 303);
+  assert.equal(activeJob(db, 1).status, 'queued');
+});
+
+test('een lopend onderzoek stopt bij het volgende controlepunt; wat al gedaan was, blijft', async (t) => {
+  let db;
+  const search = searchThatDoes(1, () => db.prepare("UPDATE jobs SET cancel_requested = 'user' WHERE status = 'running'").run());
+  const server = await startServer(t, { runJobsInline: false, hibp: fakeHibp(), search });
+  db = server.db;
+  const cookie = await registerConfirmed(server.base, server.mailer, ANNA);
+  await send(server.base, '/scan/deep', { method: 'POST', cookie });
+  await server.jobs.drain();
+
+  // Na de eerste zoekopdracht (je naam) is er niets meer gezocht.
+  assert.equal(search.calls.length, 1);
+  const job = db.prepare('SELECT status, error, steps FROM jobs').get();
+  assert.equal(job.status, 'failed');
+  assert.equal(job.error, 'cancelled');
+  const steps = JSON.parse(job.steps);
+  assert.equal(steps.find((step) => step.id === 'datalekken').status, 'done');
+  assert.equal(steps.find((step) => step.id === 'telefoon').status, 'skipped');
+  assert.ok(steps.every((step) => !['pending', 'running'].includes(step.status)));
+  // Wat de eerste zoekopdracht vond, staat er wel.
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM findings WHERE kind = 'web'").get().n, 1);
+});
+
+test('de beheerder kan een onderzoek stoppen; een ander account niet', async (t) => {
+  const search = fakeSearch({ results: [CLUB] });
+  const owner = { ...ANNA, email: 'eigenaar@example.com', naam: 'Eva Eigenaar' };
+  const { base, db, mailer, jobs } = await startServer(t, {
+    runJobsInline: false, hibp: fakeHibp(), search, ownerEmail: owner.email,
+  });
+  const admin = await registerConfirmed(base, mailer, owner);
+  const anna = await registerConfirmed(base, mailer, ANNA);
+  await send(base, '/scan/deep', { method: 'POST', cookie: anna });
+  const id = db.prepare('SELECT id FROM jobs').get().id;
+
+  // Anna kan geen beheerroute gebruiken.
+  assert.equal((await send(base, `/beheerder/onderzoeken/${id}/stoppen`, { method: 'POST', cookie: anna })).status, 404);
+  assert.equal(db.prepare('SELECT status FROM jobs').get().status, 'queued');
+
+  const html = await (await send(base, '/beheerder', { cookie: admin })).text();
+  assert.match(html, new RegExp(`action="/beheerder/onderzoeken/${id}/stoppen"`));
+  const stop = await send(base, `/beheerder/onderzoeken/${id}/stoppen`, { method: 'POST', cookie: admin });
+  assert.equal(stop.headers.get('location'), '/beheerder?melding=gestopt#onderzoeken');
+  assert.equal((await send(base, '/beheerder/onderzoeken/999/stoppen', { method: 'POST', cookie: admin })).status, 404);
+  await jobs.drain();
+  assert.equal(search.calls.length, 0);
+  assert.deepEqual({ ...db.prepare('SELECT status, error FROM jobs').get() }, { status: 'failed', error: 'cancelled_admin' });
+  assert.match(await (await send(base, '/resultaten', { cookie: anna })).text(), /gestopt door de beheerder/);
+});
+
+test('wie tijdens zijn onderzoek geblokkeerd wordt: het onderzoek stopt bij het volgende controlepunt', async (t) => {
+  let db;
+  const search = searchThatDoes(1, () => db.prepare('UPDATE users SET blocked_at = 1').run());
+  const hibp = fakeHibp();
+  const server = await startServer(t, { runJobsInline: false, hibp, search });
+  db = server.db;
+  const cookie = await registerConfirmed(server.base, server.mailer, ANNA);
+  await send(server.base, '/scan/deep', { method: 'POST', cookie });
+  await server.jobs.drain();
+  assert.equal(search.calls.length, 1);
+  assert.deepEqual({ ...db.prepare('SELECT status, error FROM jobs').get() }, { status: 'failed', error: 'account_unavailable' });
+});
+
+test('wie tijdens zijn onderzoek zoeken op zijn e-mailadres uitzet of zijn nummer verwijdert, wordt daar niet meer op onderzocht', async (t) => {
+  let db;
+  const search = searchThatDoes(1, () => db.prepare('UPDATE users SET email_web_at = NULL, phone = NULL, phone_verified_at = NULL').run());
+  const server = await startServer(t, { runJobsInline: false, hibp: fakeHibp(), search });
+  db = server.db;
+  const cookie = await registerConfirmed(server.base, server.mailer, ANNA);
+  // Bij de start: toestemming voor het e-mailadres, en een bevestigd nummer.
+  db.prepare("UPDATE users SET email_web_at = 1, phone = '+31612345678', phone_verified_at = 1").run();
+  await send(server.base, '/scan/deep', { method: 'POST', cookie });
+  await server.jobs.drain();
+
+  assert.ok(search.calls.length > 1);
+  assert.ok(search.calls.every((call) => !call.query.includes(ANNA.email) && !call.query.includes('0612345678')));
+  const steps = JSON.parse(db.prepare('SELECT steps FROM jobs').get().steps);
+  assert.equal(steps.find((step) => step.id === 'telefoon').status, 'skipped');
+  assert.equal(steps.find((step) => step.id === 'e-mail').status, 'skipped');
+  assert.equal(db.prepare('SELECT status FROM jobs').get().status, 'done');
+});
+
+test('na een herstart krijgt een onderzoek waarvoor om stoppen gevraagd was, geen nieuwe ronde', () => {
+  const db = openDatabase(':memory:');
+  addUser(db, 1);
+  addUser(db, 2);
+  enqueueJob(db, { userId: 1 }, 1);
+  enqueueJob(db, { userId: 2 }, 2);
+  claimNextJob(db, 3);
+  claimNextJob(db, 4);
+  db.prepare("UPDATE jobs SET cancel_requested = 'admin' WHERE user_id = 1").run();
+  requeueInterrupted(db, 5);
+  assert.deepEqual({ ...db.prepare('SELECT status, error FROM jobs WHERE user_id = 1').get() }, { status: 'failed', error: 'cancelled_admin' });
+  assert.equal(db.prepare('SELECT status FROM jobs WHERE user_id = 2').get().status, 'queued');
 });

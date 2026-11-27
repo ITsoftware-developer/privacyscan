@@ -173,7 +173,7 @@ const STATES = {
 // De externe bronnen, met hun toestand, hun laatste aanvraag, hun laatste test en de knoppen die
 // erbij horen. `search` en `check` zijn de koppelingen zelf (zonder pauzeknop ervoor).
 export function sourceRows({
-  db, search, check, live, budget = DEFAULT_LIMITS, now = Date.now(),
+  db, search, check, live, budget = DEFAULT_LIMITS, now = Date.now(), ai = null,
 }) {
   const searchId = searchServiceId(search);
   const xon = check?.adapters?.xon ?? null;
@@ -250,6 +250,18 @@ export function sourceRows({
     configured: true,
     canTest: false,
     note: 'Er gaan alleen de eerste 5 tekens van de hash van het wachtwoord heen. Antwoordt de dienst niet, dan gaat het aanmelden gewoon door.',
+  });
+
+  add({
+    id: 'ollama',
+    name: SERVICES.ollama.name,
+    use: 'AI-analyse in de Deep Scan',
+    state: ai ? 'actief' : 'niet-ingesteld',
+    configured: Boolean(ai),
+    canTest: Boolean(ai),
+    note: ai
+      ? `Model ${ai.model} op ${ai.url}. ${ai.local ? 'Dat is deze computer: er gaat niets naar een externe AI-dienst.' : 'Let op: dat is niet deze computer, dus de gegevens van een onderzoek gaan daarheen.'}`
+      : 'Er is geen AI ingesteld. Met AI_PROVIDER=ollama in je .env kijkt een lokaal model mee (zie de README).',
   });
 
   return rows;
@@ -330,6 +342,7 @@ export function brokerEngineOverview(db, now = Date.now()) {
            COUNT(*) AS checked,
            COALESCE(SUM(status = 'niet-toegankelijk'), 0) AS failed,
            COALESCE(SUM(status = 'overgeslagen'), 0) AS skipped,
+           COALESCE(SUM(complete = 0), 0) AS incomplete,
            MAX(checked_at) AS last
     FROM broker_checks WHERE checked_at >= ? GROUP BY broker_id`).all(since).map((row) => [row.broker_id, row]));
   const rows = BROKERS.map((broker) => {
@@ -339,6 +352,7 @@ export function brokerEngineOverview(db, now = Date.now()) {
       checked: row?.checked ?? 0,
       failed: row?.failed ?? 0,
       skipped: row?.skipped ?? 0,
+      incomplete: row?.incomplete ?? 0,
       last: row?.last ?? null,
     };
   });
@@ -356,7 +370,8 @@ export function brokerEngineOverview(db, now = Date.now()) {
 // Wat er nog niet is. Liever eerlijk op de pagina dan een knop die niets doet.
 export function notBuilt() {
   return [
-    { name: 'AI-engine', text: 'Er is nog geen AI-model gekoppeld. Er is dus ook geen AI-activiteit en geen AI-verbruik om te tonen.' },
+    { name: 'Zelf zoekopdrachten bedenken door de AI', text: 'De AI kiest welke gevonden pagina\'s we lezen en beoordeelt ze, maar bedenkt geen nieuwe zoekopdrachten: die zouden gaan over gegevens waarvan niet vaststaat dat ze van de gebruiker zijn.' },
+    { name: 'Pdf en andere documenten lezen', text: 'De paginalezer leest alleen html en platte tekst. Pdf-, Word- en Excel-bestanden worden gevonden, maar niet geopend.' },
     { name: 'Darkweb', text: 'Er is geen geautoriseerde aanbieder gekoppeld. De Deep Scan zegt dat eerlijk; een eigen darkweb-crawler bouwen we niet.' },
     { name: 'Sms-dienst', text: 'Er is nog geen sms-dienst gekoppeld. Op je eigen computer komen de codes in het testpostvak (/dev/sms); op een openbare site kan niemand een telefoonnummer bevestigen, en onderzoeken we dus geen telefoonnummers.' },
     { name: 'Pagina’s zelf onderzoeken', text: 'De scanner leest nu alleen de titel, het fragment en het adres dat de zoekdienst teruggeeft. Hij opent de pagina zelf niet.' },

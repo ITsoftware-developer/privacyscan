@@ -13,7 +13,16 @@
 <% } %>
 
 <div class="results">
-  <% if (failedJob) { %>
+  <% if (failedJob && ['cancelled', 'cancelled_admin'].includes(failedJob.error)) { %>
+    <div id="gestopt" class="report">
+      <%- include('partials/engine', {
+        heading: 'Je gestopte Deep Scan',
+        sub: jobErrorText(failedJob.error),
+        steps: failedJob.steps,
+        footnote: 'Wat hij al gevonden had, staat hieronder. Wat nog niet gedaan was, staat als overgeslagen. Start hem gerust opnieuw vanaf je dashboard.',
+      }) %>
+    </div>
+  <% } else if (failedJob) { %>
     <p class="alert alert-error notice-top" role="alert">
       Je laatste Deep Scan is niet afgemaakt (<%= jobErrorText(failedJob.error) %>). Er is niets verzonnen: start hem
       gerust opnieuw vanaf je <a href="/dashboard#deep-scan">dashboard</a>.
@@ -27,6 +36,13 @@
         steps: job.steps,
         footnote: 'Het onderzoek loopt op de achtergrond: je mag deze pagina sluiten. Zolang hij open is, ververst hij zichzelf.',
       }) %>
+      <% if (job.cancelRequested) { %>
+        <p class="hint">Wordt gestopt: voor de volgende stap of zoekopdracht houdt hij op.</p>
+      <% } else { %>
+        <form method="post" action="/scan/deep/stoppen" class="stop-form">
+          <button type="submit" class="button button-quiet">Stop dit onderzoek</button>
+        </form>
+      <% } %>
     </div>
   <% } %>
   <% if (run) { %>
@@ -133,18 +149,23 @@
   </article>
 
   <article class="card" id="databrokers">
-    <% const brokerHits = brokers.filter((row) => row.status === 'gevonden'); %>
+    <% const brokerMatches = brokers.filter((row) => row.outcome === 'overeenkomst'); %>
     <header class="card-head">
       <h2>Databrokers en telefoongidsen</h2>
-      <% if (brokerHits.length > 0) { %>
-        <span class="badge badge-warn"><%= brokerHits.length === 1 ? '1 met een mogelijke vermelding' : `${brokerHits.length} met een mogelijke vermelding` %></span>
+      <% if (brokerMatches.length > 0) { %>
+        <span class="badge badge-warn"><%= brokerMatches.length === 1 ? '1 met een overeenkomst' : `${brokerMatches.length} met een overeenkomst` %></span>
       <% } %>
     </header>
     <p class="card-text">
       Bij deze bedrijven zoeken we bij elke Deep Scan naar pagina's over jou, via de zoekdienst. We openen
-      hun sites niet en gebruiken hun eigen zoekfunctie niet. Een mogelijke vermelding betekent: de
-      zoekdienst kent op die site een pagina met je volledige naam, je bevestigde telefoonnummer of je
-      e-mailadres. Bij een naam kan dat een naamgenoot zijn: kijk zelf bij de resultaten op het web.
+      hun sites niet en gebruiken hun eigen zoekfunctie niet. We zien dus alleen wat een zoekmachine van
+      hen kent, niet wat er in hun eigen database staat.
+    </p>
+    <p class="card-text">
+      <strong>Overeenkomst gevonden</strong>: de titel of het fragment van een pagina noemt je volledige naam,
+      je bevestigde telefoonnummer of je e-mailadres (bij een naam kan dat een naamgenoot zijn).
+      <strong>Mogelijk relevante pagina</strong>: wel een pagina op die site, maar zonder je gegevens erin.
+      <strong>Niets in de zoekmachine</strong> betekent niet dat ze niets over je hebben.
     </p>
     <% if (!searchAllowed) { %>
       <p class="hint">
@@ -170,7 +191,9 @@
               alleen met een inzageverzoek (AVG artikel 15) of via een geautoriseerde gegevensdienst.
             <% } else if (row.checkedAt) { %>
               Laatst gecontroleerd op <%= formatDateTime(row.checkedAt) %><% if (row.status === 'gevonden') { %>:
-              <%= row.found === 1 ? '1 pagina' : `${row.found} pagina's` %><% if (viaText(row.via)) { %>, gevonden via <%= viaText(row.via) %><% } %><% } %>.
+              <%= row.found === 1 ? '1 pagina' : `${row.found} pagina's` %>, waarvan <%= row.matched %> met je gegevens in de titel of het fragment<% if (viaText(row.via)) { %>, gevonden via <%= viaText(row.via) %><% } %><% } %>.
+              <% if (row.outcome === 'niets') { %>Dat betekent niet dat ze niets over je hebben.<% } %>
+              <% if (!row.complete) { %>Mogelijk onvolledig: de zoekdienst gaf het maximum aantal resultaten.<% } %>
             <% } else { %>
               Nog niet gecontroleerd.
             <% } %>
@@ -265,6 +288,41 @@
                     <% } %>
                   </ul>
                   <p class="hint">Het is een gok op basis van het uiterlijk. Of het van jou is, bepaal jij.</p>
+                </div>
+              <% } %>
+              <% const page = item.details.page; %>
+              <% if (page && page.status === 'gelezen') { %>
+                <div class="page-check">
+                  <p class="signals-title">
+                    Pagina zelf gelezen op <%= formatDateTime(page.checkedAt) %>:
+                    <% if (pageFoundText(page.found)) { %>
+                      <%= pageFoundText(page.found) %> <%= page.found.length === 1 ? 'staat' : 'staan' %> erop.
+                    <% } else { %>
+                      je gegevens staan er niet (meer) op. Misschien is de pagina aangepast, of laadt hij zijn tekst pas later.
+                    <% } %>
+                  </p>
+                  <% if (page.excerpt) { %><blockquote class="page-excerpt"><%= page.excerpt %></blockquote><% } %>
+                </div>
+              <% } else if (page) { %>
+                <p class="hint">Pagina zelf niet gelezen: <%= pageReason(page.status) %>.</p>
+              <% } %>
+              <% const ai = item.details.ai; %>
+              <% if (ai && aiVerdictText(ai.verdict)) { %>
+                <div class="ai-check">
+                  <p class="signals-title">
+                    Inschatting van het AI-model (<%= ai.model %>), op basis van <%= ai.pageRead ? 'de pagina zelf' : 'de titel en het fragment' %>:
+                    <strong><%= aiVerdictText(ai.verdict) %></strong>.
+                  </p>
+                  <% if (Array.isArray(ai.data) && ai.data.length > 0) { %>
+                    <ul class="chips" aria-label="Gegevens die de AI letterlijk in de tekst vond">
+                      <% for (const entry of ai.data) { %><li><%= aiDataLabel(entry.type) %>: <strong><%= aiQuote(entry) %></strong></li><% } %>
+                    </ul>
+                  <% } %>
+                  <p class="hint">
+                    <% if (Array.isArray(ai.data) && ai.data.length > 0) { %>Elk gegeven hierboven staat letterlijk in de tekst.<% } %>
+                    <% if (ai.rejected > 0) { %><%= ai.rejected === 1 ? '1 bewering van de AI stond er niet letterlijk in en is weggegooid.' : `${ai.rejected} beweringen van de AI stonden er niet letterlijk in en zijn weggegooid.` %><% } %>
+                    Een inschatting van de AI is geen bewijs: alleen jij weet of het over jou gaat.
+                  </p>
                 </div>
               <% } %>
               <%- include('partials/evidence', { finding: item }) %>

@@ -53,6 +53,8 @@ test('een Deep Scan zonder problemen: wat kan is voltooid, en wat niet kan zegt 
     documenten: 'done',
     telefoon: 'skipped', // geen bevestigd telefoonnummer
     'e-mail': 'skipped', // geen toestemming om op het e-mailadres te zoeken
+    paginas: 'unavailable', // pagina's lezen staat uit in deze tests
+    ai: 'unavailable', // er is geen AI ingesteld
     darkweb: 'unavailable',
     blootstelling: 'done',
     verificatie: 'done',
@@ -61,12 +63,13 @@ test('een Deep Scan zonder problemen: wat kan is voltooid, en wat niet kan zegt 
   assert.deepEqual(run.steps.map((item) => item.title), [
     'Datalekdatabases onderzoeken', 'Openbare internetbronnen onderzoeken', 'Databrokers controleren',
     'Sociale media onderzoeken', 'Openbare documenten zoeken', 'Telefoonnummer onderzoeken',
-    'E-mailadres op het web zoeken', 'Darkwebbronnen', 'Mogelijke blootstelling beoordelen',
+    'E-mailadres op het web zoeken', 'Gevonden pagina\'s zelf controleren', 'AI-analyse en vervolgonderzoek',
+    'Darkwebbronnen', 'Mogelijke blootstelling beoordelen',
     'Bewijs controleren en combineren',
   ]);
   assert.equal(step(run, 'datalekken').note, '2 datalekken gevonden bij Have I Been Pwned, waarvan 2 nieuw.');
   // De nep-zoekdienst geeft overal dezelfde drie resultaten, en geen daarvan staat op een databrokersite.
-  assert.match(step(run, 'databrokers').note, /^Bij 14 databrokers niets gevonden op je naam\. Afgeschermd \(niet te doorzoeken\): Pipl\.$/);
+  assert.match(step(run, 'databrokers').note, /^Bij 14 databrokers gaf de zoekmachine niets\. Dat betekent niet dat ze niets over je hebben: wat niet in een zoekmachine staat, zien we niet\. Afgeschermd \(niet te doorzoeken\): Pipl\.$/);
   assert.match(step(run, 'web').note, /3 mogelijke vermeldingen gevonden, waarvan 3 nieuw/);
   assert.match(step(run, 'telefoon').note, /geen bevestigd telefoonnummer/);
   assert.match(step(run, 'e-mail').note, /niet gekozen om ook op je e-mailadres te zoeken/);
@@ -280,6 +283,8 @@ test('als niets lukt, krijg je toch een compleet rapport zonder één valse "vol
     documenten: 'unreachable',
     telefoon: 'skipped',
     'e-mail': 'skipped',
+    paginas: 'unavailable', // pagina's lezen staat uit in deze tests
+    ai: 'unavailable', // er is geen AI ingesteld
     darkweb: 'unavailable',
     blootstelling: 'skipped',
     verificatie: 'skipped',
@@ -371,7 +376,7 @@ const READABLE = (html) => html
 // De stappen van het rapport zoals de bezoeker ze ziet: titel, kleur en status in tekst.
 function stepsIn(html) {
   return [...html.matchAll(/<span class="engine-name">([^<]*)<\/span>[\s\S]*?<span class="state state-(\w+)">([^<]*)<\/span>/g)]
-    .map(([, title, tone, label]) => ({ title, tone, label }));
+    .map(([, title, tone, label]) => ({ title: title.replace(/&#39;/g, "'"), tone, label }));
 }
 
 // Een site met een bevestigd account van Anna, op je eigen computer.
@@ -453,7 +458,7 @@ test('na de Deep Scan zie je het rapport: elke stap met zijn eerlijke stand', as
 
   const html = await body(base, '/resultaten?gescand=deep', cookie);
   const text = READABLE(html);
-  assert.match(text, /Deep Scan klaar: 7 van 10 stappen voltooid\./);
+  assert.match(text, /Deep Scan klaar: 7 van 12 stappen voltooid\./);
   assert.match(html, /<div id="rapport" class="report">/);
   assert.match(text, /Rapport van je laatste Deep Scan/);
   assert.deepEqual(stepsIn(html), [
@@ -464,12 +469,14 @@ test('na de Deep Scan zie je het rapport: elke stap met zijn eerlijke stand', as
     { title: 'Openbare documenten zoeken', tone: 'ok', label: 'Voltooid' },
     { title: 'Telefoonnummer onderzoeken', tone: 'warn', label: 'Overgeslagen' },
     { title: 'E-mailadres op het web zoeken', tone: 'warn', label: 'Overgeslagen' },
+    { title: 'Gevonden pagina\'s zelf controleren', tone: 'warn', label: 'Niet beschikbaar' },
+    { title: 'AI-analyse en vervolgonderzoek', tone: 'warn', label: 'Niet beschikbaar' },
     { title: 'Darkwebbronnen', tone: 'warn', label: 'Niet beschikbaar' },
     { title: 'Mogelijke blootstelling beoordelen', tone: 'ok', label: 'Voltooid' },
     { title: 'Bewijs controleren en combineren', tone: 'ok', label: 'Voltooid' },
   ]);
   assert.match(text, /1 datalek gevonden bij Have I Been Pwned, waarvan 1 nieuw\./);
-  assert.match(text, /Bij 14 databrokers niets gevonden op je naam\./);
+  assert.match(text, /Bij 14 databrokers gaf de zoekmachine niets\./);
   assert.match(text, /Wat nog niet bestaat, noemen we nooit voltooid\./);
   assert.match(html, /<a href="\/bronnen">Bronnen en roadmap<\/a>/);
 });
@@ -551,11 +558,12 @@ test('na een Deep Scan toont het dashboard de laatste stappen en de datum', asyn
   const text = READABLE(dashboard);
   assert.match(text, /Deep Scan Laatst gedaan op \d+ \w+ \d{4} om \d{2}:\d{2}/);
   assert.match(text, /Je laatste Deep Scan/);
-  assert.equal(stepsIn(dashboard).length, 10);
+  assert.equal(stepsIn(dashboard).length, 12);
   assert.match(dashboard, /<a href="\/resultaten#rapport">Bekijk het volledige rapport<\/a>/);
   // De voortgang bovenaan laat zien wat er is en wat er nog niet is.
   assert.match(dashboard, /<li class="step done"><span class="step-dot" aria-hidden="true">✓<\/span>Fundament<\/li>/);
-  assert.match(dashboard, /<li class="step done"><span class="step-dot" aria-hidden="true">✓<\/span>Databrokers<\/li>/);
+  // Fase 3 is begonnen, niet klaar.
+  assert.match(dashboard, /<li class="step"><span class="step-dot" aria-hidden="true">3<\/span>Databrokers<\/li>/);
   assert.match(dashboard, /<li class="step"><span class="step-dot" aria-hidden="true">5<\/span>AI-agent<\/li>/);
   assert.doesNotMatch(dashboard, /Verwijderverzoeken|Fase 3|laten verwijderen/);
 });
@@ -568,7 +576,7 @@ test('is een bron niet bereikbaar, dan staat dat eerlijk in het rapport en blijf
   assert.equal(response.status, 303); // de scan zelf is gelukt: de uitkomst staat in het rapport
 
   const html = await body(base, '/resultaten?gescand=deep', cookie);
-  assert.match(READABLE(html), /Deep Scan klaar: 5 van 10 stappen voltooid\./);
+  assert.match(READABLE(html), /Deep Scan klaar: 5 van 12 stappen voltooid\./);
   assert.deepEqual(stepsIn(html).map((item) => [item.tone, item.label]), [
     ['bad', 'Niet toegankelijk'],
     ['ok', 'Voltooid'],
@@ -577,6 +585,8 @@ test('is een bron niet bereikbaar, dan staat dat eerlijk in het rapport en blijf
     ['ok', 'Voltooid'],
     ['warn', 'Overgeslagen'],
     ['warn', 'Overgeslagen'],
+    ['warn', 'Niet beschikbaar'], // pagina's zelf lezen staat uit in deze tests
+    ['warn', 'Niet beschikbaar'], // geen AI
     ['warn', 'Niet beschikbaar'],
     ['warn', 'Overgeslagen'],
     ['ok', 'Voltooid'],
@@ -614,7 +624,7 @@ test('op een openbare site slaat de Deep Scan het zoeken op naam over, behalve v
   const html = await body(base, '/resultaten?gescand=deep', bram);
   assert.deepEqual(stepsIn(html).map((item) => item.label), [
     'Voltooid', 'Overgeslagen', 'Overgeslagen', 'Overgeslagen', 'Overgeslagen', 'Overgeslagen', 'Overgeslagen',
-    'Niet beschikbaar', 'Voltooid', 'Voltooid',
+    'Niet beschikbaar', 'Niet beschikbaar', 'Niet beschikbaar', 'Voltooid', 'Voltooid',
   ]);
   assert.match(READABLE(html), /Zoeken op naam staat uit op een openbare site/);
   assert.deepEqual(search.calls, []); // de naam van Bram is nergens heen gestuurd
@@ -626,7 +636,7 @@ test('op een openbare site slaat de Deep Scan het zoeken op naam over, behalve v
   const own = await body(base, '/resultaten', anna);
   assert.deepEqual(stepsIn(own).map((item) => item.label), [
     'Voltooid', 'Voltooid', 'Voltooid', 'Voltooid', 'Voltooid', 'Overgeslagen', 'Overgeslagen', 'Niet beschikbaar',
-    'Voltooid', 'Voltooid',
+    'Niet beschikbaar', 'Niet beschikbaar', 'Voltooid', 'Voltooid',
   ]);
 });
 

@@ -57,6 +57,8 @@ export const JOB_ERRORS = {
   interrupted: 'te vaak onderbroken door een herstart van de server',
   account_unavailable: 'het account bestaat niet meer, is geblokkeerd of niet bevestigd',
   unknown_kind: 'onbekende soort onderzoek',
+  cancelled: 'gestopt op jouw verzoek',
+  cancelled_admin: 'gestopt door de beheerder',
 };
 
 const account = (d) => (d.account === undefined ? 'een account' : `account #${d.account}`);
@@ -107,6 +109,7 @@ export const EVENTS = {
     text: (d) => `Kostengrens bereikt: ${serviceName(d.service)} krijgt ${d.period === 'month' ? 'deze maand' : 'vandaag'} geen aanvragen meer van de site.`,
   },
   job_failed: { level: 'warn', text: (d) => `Een onderzoek op de achtergrond mislukte: ${JOB_ERRORS[d.job] ?? JOB_ERRORS.unexpected}.` },
+  job_cancelled: { level: 'info', text: (d) => `Een onderzoek op de achtergrond is gestopt ${d.by === 'admin' ? 'door de beheerder' : 'door de gebruiker zelf'}.` },
   jobs_requeued: {
     level: 'warn',
     text: (d) => `Na een herstart: ${d.count ?? 0} onderzoek(en) opnieuw in de wachtrij gezet${d.failed ? `, ${d.failed} te vaak onderbroken en gestopt` : ''}.`,
@@ -144,6 +147,7 @@ const DETAILS = {
   count,
   failed: count,
   period: oneOf(['day', 'month']),
+  by: oneOf(['user', 'admin']),
   job: (value) => (Object.hasOwn(JOB_ERRORS, value) ? value : 'unexpected'),
 };
 

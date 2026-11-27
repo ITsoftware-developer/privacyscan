@@ -16,6 +16,7 @@ export const BRAVE_PROBLEMS = {
   rate_limited: 'Brave staat geen aanvragen meer toe (HTTP 402 of 429): het tegoed of de limiet is op, of er is geen betaalmethode ingesteld op je Brave-account.',
   unavailable: 'Brave is niet bereikbaar: geen internet, een firewall of een storing bij Brave.',
   unexpected: 'Brave gaf een antwoord dat de koppeling niet kan lezen. Dan past de koppeling misschien niet meer bij de dienst: meld dit, samen met de regel hierboven.',
+  budget: 'Niet getest: de kostengrens van de site (per dag of per maand) is bereikt, en ook een test kost een betaalde aanvraag. Hij werkt weer als de dag of maand om is, of verhoog de grens in je .env.',
 };
 
 export const XON_PROBLEMS = {
@@ -71,5 +72,24 @@ export async function probeHibp(hibp) {
     return { ok: true, text: `Het testadres van Have I Been Pwned is gecontroleerd (${plural(breaches.length, 'lek', 'lekken')}).` };
   } catch (error) {
     return { ok: false, text: explain(error, HIBP_PROBLEMS) };
+  }
+}
+
+// Vraagt Ollama welke modellen er zijn, en of het ingestelde model erbij zit. Dit kost niets en stuurt geen
+// persoonsgegevens. Geeft { ok, text }.
+export async function probeOllama(provider) {
+  try {
+    const models = await provider.models();
+    const wanted = String(provider.model);
+    const present = models.some((name) => name === wanted || name === `${wanted}:latest` || (!wanted.includes(':') && name.startsWith(`${wanted}:`)));
+    if (!present) {
+      return { ok: false, text: `Ollama antwoordt, maar het model ${wanted} is niet geïnstalleerd. Installeer het met: ollama pull ${wanted}` };
+    }
+    return { ok: true, text: `Ollama antwoordt en het model ${wanted} is geïnstalleerd (${plural(models.length, 'model', 'modellen')} in totaal).` };
+  } catch (error) {
+    if (error?.code === 'unavailable' || error?.code === 'timeout') {
+      return { ok: false, text: `Ollama is niet bereikbaar op ${provider.url}. Staat Ollama aan? Op Windows start het meestal vanzelf; anders: ollama serve.` };
+    }
+    return { ok: false, text: 'Ollama gaf een onverwacht antwoord.' };
   }
 }

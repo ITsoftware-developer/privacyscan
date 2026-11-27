@@ -11,7 +11,7 @@ import {
 } from './findings.js';
 import { logEvent } from './events.js';
 import { SqliteStore } from './limit-store.js';
-import { activeJob, enqueueJob, latestJob } from './jobs/queue.js';
+import { activeJob, enqueueJob, latestJob, requestCancel } from './jobs/queue.js';
 import { createMonitor } from './monitor.js';
 import { canSearchByName as mayUseName, hasOwnerAddress, isOwner } from './owner.js';
 import { brokerOverview } from './research/broker-scan.js';
@@ -170,6 +170,11 @@ export function createScanRoutes({
   // De melding na een geslaagde scan, uit de gegevens van die scan.
   function scanNotice(user, query) {
     const userId = user.id;
+    if (query.gestopt !== undefined || query.stopt !== undefined) {
+      return activeJob(db, userId)
+        ? 'Je Deep Scan stopt zo: voor de volgende stap of zoekopdracht houdt hij op. Wat hij al gevonden had, blijft staan.'
+        : 'Je Deep Scan is gestopt. Wat hij al gevonden had, staat hieronder.';
+    }
     if (query.gescand === 'deep') {
       if (activeJob(db, userId)) {
         return 'Je Deep Scan loopt op de achtergrond. Je mag deze pagina sluiten: het rapport komt hier, en op je dashboard zie je hoe ver hij is.';
@@ -283,6 +288,16 @@ export function createScanRoutes({
     enqueueJob(db, { userId: req.user.id, kind: 'deep', steps: plannedSteps() });
     if (runJobsInline && jobs) await jobs.drain();
     res.redirect(303, '/resultaten?gescand=deep#rapport');
+  });
+
+  // Je eigen Deep Scan stoppen. Staat hij nog in de wachtrij, dan is hij meteen gestopt; loopt hij, dan
+  // stopt hij bij het volgende controlepunt (voor de volgende stap of zoekopdracht, zie scanner.js).
+  router.post('/scan/deep/stoppen', requireLogin, (req, res) => {
+    const job = activeJob(db, req.user.id);
+    if (!job) return res.redirect(303, '/resultaten#rapport');
+    const result = requestCancel(db, job.id, 'user');
+    if (result === 'stopped') logEvent(db, 'job_cancelled', { by: 'user' });
+    res.redirect(303, `/resultaten?${result === 'stopped' ? 'gestopt' : 'stopt'}#rapport`);
   });
 
   // Het formulier heeft geen invoervelden: er wordt altijd gezocht naar het

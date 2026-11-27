@@ -5,7 +5,8 @@
 // is geen beveiliging. Wie niet is ingelogd, gaat naar de inlogpagina. Voor elk ander account
 // bestaat de pagina niet: dat krijgt de gewone "pagina niet gevonden".
 //
-// Wat je hier kunt doen: bronnen testen en pauzeren, en accounts blokkeren of deblokkeren. Alles wat
+// Wat je hier kunt doen: bronnen testen en pauzeren, onderzoeken stoppen, en accounts blokkeren of
+// deblokkeren. Alles wat
 // je doet, komt in het systeemlog. Formulieren van een andere site worden al geweigerd door
 // checkOrigin (auth.js), net als overal op de site.
 import { Router } from 'express';
@@ -14,12 +15,15 @@ import {
   accountExists, accountOverview, blockAccount, brokerEngineOverview, findingTotals, format, notBuilt, recentRuns, recentScans,
   scannerSettings, searchServiceId, sourceRows, systemStatus, unblockAccount, usageOverview,
 } from './admin.js';
+import { budgetedSearch } from './budget.js';
 import { canPause, setPaused } from './controls.js';
 import { JOB_ERRORS, countRecentEvents, listEvents, logEvent } from './events.js';
-import { JOB_STATUSES, queueOverview } from './jobs/queue.js';
+import { JOB_STATUSES, queueOverview, requestCancel } from './jobs/queue.js';
 import { SqliteStore } from './limit-store.js';
 import { isOwner } from './owner.js';
-import { probeHibp, probeSearch, probeXon } from './probes.js';
+import {
+  probeHibp, probeOllama, probeSearch, probeXon,
+} from './probes.js';
 
 const ONE_HOUR = 60 * 60 * 1000;
 
@@ -32,6 +36,8 @@ const NOTICES = {
   'te-vaak': 'Je hebt het afgelopen uur al vaak getest. Elke test is een echte aanvraag (en kost soms tegoed). Probeer het later opnieuw.',
   geblokkeerd: 'Het account is geblokkeerd en meteen uitgelogd. Inloggen kan niet meer tot je het deblokkeert.',
   gedeblokkeerd: 'Het account is gedeblokkeerd. De gebruiker kan weer inloggen.',
+  gestopt: 'Het onderzoek is gestopt.',
+  stopt: 'Het onderzoek stopt bij het volgende controlepunt: voor de volgende stap of de volgende aanvraag aan een bron.',
 };
 
 function noticeFrom(query) {
@@ -46,7 +52,7 @@ function notFound(res) {
 const parseId = (value) => (/^\d{1,15}$/.test(String(value)) ? Number(value) : 0);
 
 export function createAdminRoutes({
-  db, production, ownerEmail, monitor, search, check, mailer, limits, budget,
+  db, production, ownerEmail, monitor, search, check, mailer, limits, budget, ai = null,
 }) {
   const router = Router();
 
@@ -67,11 +73,13 @@ export function createAdminRoutes({
   });
 
   // De testknoppen. Ze gebruiken de koppelingen zelf, zonder pauzeknop ervoor: een test is een
-  // bewuste keuze van de beheerder, ook als de bron op pauze staat. Elke test is een echte aanvraag.
+  // bewuste keuze van de beheerder, ook als de bron op pauze staat. Elke test is een echte aanvraag, en
+  // een test van Brave kost geld: die telt dus mee voor de kostengrens (zie budget.js).
   const probes = {};
-  if (searchServiceId(search) === 'brave') probes.brave = () => probeSearch(search);
+  if (searchServiceId(search) === 'brave') probes.brave = () => probeSearch(budgetedSearch(search, db, budget));
   if (check?.adapters?.xon?.listSize) probes.xon = () => probeXon(check.adapters.xon);
   if (check?.adapters?.hibp) probes.hibp = () => probeHibp(check.adapters.hibp);
+  if (ai) probes.ollama = () => probeOllama(ai.provider);
 
   const testLimiter = rateLimit({
     windowMs: ONE_HOUR,
@@ -94,7 +102,7 @@ export function createAdminRoutes({
       notice: noticeFrom(req.query),
       status: systemStatus({ db, monitor, production, search, check, mailer, now }),
       sources: sourceRows({
-        db, search, check, live, budget, now,
+        db, search, check, live, budget, now, ai,
       }),
       usage: usageOverview({
         usage: monitor.usage(now), live, db, budget, now,
@@ -162,6 +170,15 @@ export function createAdminRoutes({
       res.redirect(303, `/beheerder?melding=${block ? 'geblokkeerd' : 'gedeblokkeerd'}#accounts`);
     };
   }
+
+  // Een onderzoek uit de wachtrij stoppen, bijvoorbeeld als het vastloopt of te veel kost.
+  router.post('/onderzoeken/:id/stoppen', (req, res) => {
+    const id = parseId(req.params.id);
+    const result = id ? requestCancel(db, id, 'admin') : null;
+    if (!result) return notFound(res);
+    if (result === 'stopped') logEvent(db, 'job_cancelled', { by: 'admin' });
+    res.redirect(303, `/beheerder?melding=${result === 'stopped' ? 'gestopt' : 'stopt'}#onderzoeken`);
+  });
 
   router.post('/accounts/:id/blokkeren', accountAction(true));
   router.post('/accounts/:id/deblokkeren', accountAction(false));

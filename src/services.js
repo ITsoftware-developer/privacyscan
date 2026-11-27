@@ -1,4 +1,4 @@
-// De externe diensten waar de site aanvragen naartoe stuurt. De beheerpagina telt per dienst de
+// De diensten waar de site aanvragen naartoe stuurt. De beheerpagina telt per dienst de
 // aanvragen (monitor.js), het systeemlog noemt ze bij naam (events.js), en een paar ervan kun je
 // pauzeren (controls.js).
 //
@@ -9,6 +9,8 @@ export const SERVICES = {
   xon: { id: 'xon', name: 'XposedOrNot', pausable: true },
   hibp: { id: 'hibp', name: 'Have I Been Pwned', pausable: true },
   'pwned-passwords': { id: 'pwned-passwords', name: 'Pwned Passwords', pausable: false },
+  // Het AI-model (zie ai/). Ollama draait standaard op je eigen computer: dan gaat er niets naar buiten.
+  ollama: { id: 'ollama', name: 'Ollama (AI-model)', pausable: true },
 };
 
 export const SERVICE_IDS = Object.keys(SERVICES);

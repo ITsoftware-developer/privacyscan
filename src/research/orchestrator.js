@@ -6,12 +6,15 @@
 // bevestigd, dan loopt er niets.
 import { DEFAULT_LIMITS, perScanLimit } from '../budget.js';
 import { logEvent } from '../events.js';
+import { cancelRequested } from '../jobs/queue.js';
 import { JobError } from '../jobs/worker.js';
 import { canSearchByName } from '../owner.js';
 import { runDeepScan } from '../scanner.js';
 
 export function createResearchHandlers({
   db, check, search, monitor, production = false, ownerEmail = null, clock = Date.now, perScan = DEFAULT_LIMITS.perScan,
+  pageReader = null, // leest gevonden pagina's zelf (zie research/page-reader.js), of null: staat uit
+  ai = null,         // de AI-agent (zie ai/agent.js), of null: er is geen AI ingesteld
 }) {
   function loadUser(userId) {
     const row = db.prepare(`
@@ -24,6 +27,13 @@ export function createResearchHandlers({
   return {
     async deep(job, { progress }) {
       const user = loadUser(job.userId);
+      // Het controlepunt, voor elke stap en elke aanvraag: is het onderzoek gestopt? Bestaat het account
+      // nog, is het niet geblokkeerd en nog bevestigd? Geeft de gegevens zoals ze NU zijn.
+      const checkpoint = () => {
+        const by = cancelRequested(db, job.id);
+        if (by) throw new JobError(by === 'admin' ? 'cancelled_admin' : 'cancelled');
+        return loadUser(job.userId);
+      };
       const started = clock();
       const run = await monitor.track('deep', () => runDeepScan({
         db,
@@ -33,6 +43,9 @@ export function createResearchHandlers({
         allowWeb: canSearchByName(user, { production, ownerEmail }),
         now: started,
         onProgress: progress,
+        checkpoint,
+        pageReader,
+        ai,
       }));
       const done = run.steps.filter((step) => step.status === 'done').length;
       logEvent(db, 'deep_scan_done', { done, total: run.steps.length, ms: clock() - started });

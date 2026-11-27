@@ -93,6 +93,11 @@
           (<%= job.steps.filter((step) => !['pending', 'running'].includes(step.status)).length %> van <%= job.steps.length %> stappen klaar).
           Je mag de site sluiten. <a href="/resultaten#rapport">Bekijk de voortgang</a>
         </p>
+        <% if (!job.cancelRequested) { %>
+          <form method="post" action="/scan/deep/stoppen">
+            <button type="submit" class="button button-quiet profile-button">Stop dit onderzoek</button>
+          </form>
+        <% } %>
       <% } else { %>
         <form method="post" action="/scan/deep">
           <button type="submit" class="button button-action">Start Deep Scan</button>

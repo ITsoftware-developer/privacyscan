@@ -16,7 +16,7 @@ import { createMailer } from './mail.js';
 import { confidenceLabel, decisionLabel } from './confidence.js';
 import { dataClassLabel } from './data-classes.js';
 import { describeStep } from './engine.js';
-import { describeWebResult } from './extract.js';
+import { describeWebResult, extractSignals } from './extract.js';
 import { createMonitor } from './monitor.js';
 import { isOwner, parseOwnerEmail } from './owner.js';
 import { isPwned } from './pwned.js';
@@ -28,11 +28,24 @@ import { createProfileRoutes } from './routes-profile.js';
 import { createScanRoutes } from './routes-scan.js';
 import { createResearchHandlers } from './research/orchestrator.js';
 import { formatPhone } from './phone.js';
+import { PAGE_REASONS, foundText } from './research/page-reader.js';
+import { DATA_TYPES, VERDICTS } from './ai/agent.js';
 import { CODE_MINUTES } from './phone-codes.js';
 import { createSmsSender } from './sms.js';
 import { PHASES, evidenceSource, sourceById, sourceHost } from './sources.js';
 
 const ROOT = join(import.meta.dirname, '..');
+
+// Een citaat van de AI zoals de pagina het toont: een telefoonnummer of e-mailadres gemaskeerd, net als bij
+// de andere gegevens in een webresultaat (zie extract.js); de rest letterlijk, hooguit 120 tekens.
+function maskedQuote(entry) {
+  const quote = String(entry?.quote ?? '');
+  if (entry?.type === 'telefoon' || entry?.type === 'e-mail') {
+    const kind = entry.type === 'telefoon' ? 'phone' : 'email';
+    return extractSignals({ snippet: quote }).find((signal) => signal.kind === kind)?.display ?? '•••';
+  }
+  return quote.length > 120 ? `${quote.slice(0, 119)}…` : quote;
+}
 
 export function createApp({
   db,
@@ -55,6 +68,8 @@ export function createApp({
   runJobsInline = false, // de tests: een onderzoek meteen uitvoeren; anders loopt het op de achtergrond (app.jobs.start() in server.js)
   budget = DEFAULT_LIMITS, // kostenlimieten voor de zoekdienst: per dag, per maand en per onderzoek (zie budget.js)
   sms = createSmsSender({ production }), // verstuurt de code om je telefoonnummer te bevestigen (zie sms.js)
+  pageReader = null,    // leest gevonden pagina's zelf (zie research/page-reader.js); server.js zet hem aan, tenzij PAGE_CHECK=off
+  ai = null,            // de AI-agent (zie ai/agent.js); server.js maakt hem met AI_PROVIDER=ollama
   phoneCodeLimit = 3,   // sms-codes per uur, per account en per telefoonnummer
 }) {
   const owner = parseOwnerEmail(ownerEmail);
@@ -67,7 +82,7 @@ export function createApp({
   const jobs = createWorker({
     db,
     handlers: createResearchHandlers({
-      db, check: guardedCheck, search: guardedSearch, monitor: meter, production, ownerEmail: owner, perScan: budget.perScan,
+      db, check: guardedCheck, search: guardedSearch, monitor: meter, production, ownerEmail: owner, perScan: budget.perScan, pageReader, ai,
     }),
   });
   const app = express();
@@ -99,6 +114,15 @@ export function createApp({
   // Kan de site een code per sms sturen? (Zie sms.js: op een openbare site nog niet.)
   app.locals.smsAvailable = sms.available;
   app.locals.codeMinutes = CODE_MINUTES;
+  // Leest de site gevonden pagina's zelf, en kijkt er een AI mee? (Voor de privacyverklaring en de pagina's.)
+  app.locals.pageCheck = Boolean(pageReader);
+  app.locals.aiInfo = ai ? {
+    provider: ai.providerName, model: ai.model, url: ai.url, local: ai.local,
+  } : null;
+  // Voor de inschatting van de AI bij een webresultaat (zie ai/agent.js).
+  app.locals.aiVerdictText = (verdict) => (Object.hasOwn(VERDICTS, verdict) ? VERDICTS[verdict] : null);
+  app.locals.aiDataLabel = (type) => (Object.hasOwn(DATA_TYPES, type) ? DATA_TYPES[type] : 'Gegeven');
+  app.locals.aiQuote = maskedQuote;
   // Voor het rapport van de Deep Scan en het bewijs bij elke bevinding.
   app.locals.describeStep = describeStep;
   app.locals.jobErrorText = (code) => JOB_ERRORS[code] ?? JOB_ERRORS.unexpected;
@@ -106,6 +130,8 @@ export function createApp({
   app.locals.decisionLabel = decisionLabel;
   app.locals.describeWebResult = describeWebResult;
   app.locals.viaText = viaText;
+  app.locals.pageFoundText = foundText;
+  app.locals.pageReason = (status) => (Object.hasOwn(PAGE_REASONS, status) ? PAGE_REASONS[status] : 'onbekend');
   app.locals.evidenceSource = evidenceSource;
   app.locals.phases = PHASES;
   // Voor de privacyverklaring: naar welke dienst gaan de e-mailadressen? (Have I Been Pwned,
@@ -155,6 +181,7 @@ export function createApp({
   app.use('/beheerder', createAdminRoutes({
     db,
     production,
+    ai,
     ownerEmail: owner,
     monitor: meter,
     search,

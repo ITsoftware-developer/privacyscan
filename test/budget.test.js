@@ -38,8 +38,11 @@ test('usedNow en budgetState tellen vandaag en deze maand (in UTC)', () => {
   assert.deepEqual(usedNow(db, 'brave', NOW), { day: 7, month: 47 });
 
   assert.deepEqual(budgetState(db, 'brave', { perDay: 10, perMonth: 100, perScan: 5 }, NOW), {
-    day: { used: 7, max: 10 }, month: { used: 47, max: 100 }, reached: null,
+    day: { used: 7, max: 10 }, month: { used: 47, max: 100 }, pending: 0, reached: null,
   });
+  // Aanvragen die onderweg zijn, tellen mee.
+  assert.equal(budgetState(db, 'brave', { perDay: 10, perMonth: 100, perScan: 5 }, NOW, 3).reached, 'day');
+  assert.equal(budgetState(db, 'brave', { perDay: 10, perMonth: 49, perScan: 5 }, NOW, 2).reached, 'month');
   assert.equal(budgetState(db, 'brave', { perDay: 7, perMonth: 100, perScan: 5 }, NOW).reached, 'day');
   assert.equal(budgetState(db, 'brave', { perDay: 7, perMonth: 47, perScan: 5 }, NOW).reached, 'month');
 });
@@ -111,4 +114,70 @@ test('via de site: grens bereikt, dan zegt het zoeken en de Deep Scan dat eerlij
   assert.match(admin, /Bereikt: geen zoekopdrachten meer vandaag/);
   assert.match(admin, /vandaag <strong>1<\/strong> van 1/);
   assert.match(admin, /Hooguit 1 zoekopdrachten per dag, 10 per maand en 25 per Deep Scan/);
+});
+
+test('gelijktijdige aanvragen glippen niet samen door de kostengrens', async () => {
+  const db = openDatabase(':memory:');
+  // Een trage dienst: elk antwoord blijft hangen tot we het loslaten. Zo lopen er aanvragen tegelijk.
+  const waiting = [];
+  const brave = fakeSearch({ name: 'brave', results: () => new Promise((resolve) => { waiting.push(() => resolve([CLUB])); }) });
+  const limited = budgetedSearch(brave, db, { perDay: 2, perMonth: 100, perScan: 25 }, { clock: () => NOW });
+
+  const attempts = Array.from({ length: 5 }, () => limited.search({ query: 'x' }).then(() => 'ok', (error) => error.code));
+  await new Promise((resolve) => { setImmediate(resolve); });
+  assert.equal(brave.calls.length, 2); // maar twee aanvragen kregen een plek
+  assert.equal(limited.pendingCalls, 2);
+  for (const release of waiting) release();
+  assert.deepEqual((await Promise.all(attempts)).sort(), ['budget', 'budget', 'budget', 'ok', 'ok']);
+  assert.equal(limited.pendingCalls, 0);
+
+  // Een mislukte aanvraag geeft zijn plek terug.
+  const broken = fakeSearch({ name: 'brave', error: new Error('kapot') });
+  const guarded = budgetedSearch(broken, db, { perDay: 1, perMonth: 100, perScan: 25 }, { clock: () => NOW });
+  await assert.rejects(guarded.search({ query: 'x' }), /kapot/);
+  assert.equal(guarded.pendingCalls, 0);
+  await assert.rejects(guarded.search({ query: 'x' }), /kapot/); // niet "budget": er staat niets in api_usage
+});
+
+test('ook twee processen met dezelfde database krijgen samen niet meer plekken dan de grens', async (t) => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'privacyscan-budget-'));
+  const first = openDatabase(join(dir, 'gedeeld.db'));
+  const second = openDatabase(join(dir, 'gedeeld.db')); // een tweede verbinding, zoals een tweede proces
+  t.after(() => {
+    first.close();
+    second.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const waiting = [];
+  const slow = () => fakeSearch({ name: 'brave', results: () => new Promise((resolve) => { waiting.push(() => resolve([CLUB])); }) });
+  const limits = { perDay: 3, perMonth: 100, perScan: 25 };
+  const a = budgetedSearch(slow(), first, limits, { clock: () => NOW });
+  const b = budgetedSearch(slow(), second, limits, { clock: () => NOW });
+
+  const attempts = [a, b, a, b, a, b].map((search) => search.search({ query: 'x' }).then(() => 'ok', (error) => error.code));
+  await new Promise((resolve) => { setImmediate(resolve); });
+  assert.equal(waiting.length, 3); // drie plekken, verdeeld over de twee "processen"
+  assert.equal(a.pendingCalls, 3);
+  assert.equal(b.pendingCalls, 3);
+  for (const done of waiting) done();
+  assert.deepEqual((await Promise.all(attempts)).filter((outcome) => outcome === 'ok').length, 3);
+  assert.equal(a.pendingCalls, 0);
+});
+
+test('een plek van een proces dat onderweg stopte, verloopt vanzelf', async () => {
+  const { HOLD_MS, pendingHolds, reserve } = await import('../src/budget.js');
+  const db = openDatabase(':memory:');
+  const limits = { perDay: 1, perMonth: 100, perScan: 25 };
+  assert.ok(reserve(db, 'brave', limits, NOW).id); // nooit teruggegeven
+  assert.deepEqual(reserve(db, 'brave', limits, NOW + 1000), { reached: 'day' });
+  assert.equal(pendingHolds(db, 'brave', NOW + HOLD_MS - 1), 1);
+  assert.equal(pendingHolds(db, 'brave', NOW + HOLD_MS), 0);
+  assert.ok(reserve(db, 'brave', limits, NOW + HOLD_MS).id);
+  // En de opruimronde van de server haalt verlopen plekken weg.
+  const { removeExpired } = await import('../src/db.js');
+  removeExpired(db, NOW + 3 * HOLD_MS);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM budget_holds').get().n, 0);
 });

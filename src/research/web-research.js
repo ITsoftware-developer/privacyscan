@@ -2,6 +2,7 @@
 // en bewaren met waar ze vandaan komen. De stappen van de Deep Scan (scanner.js) gebruiken dit voor
 // databrokers, sociale media, documenten, je telefoonnummer en je e-mailadres.
 import { DEMO_CONFIDENCE, rateWebResult } from '../confidence.js';
+import { JobError } from '../jobs/worker.js';
 import { classifyUrl } from '../extract.js';
 import { saveWebResults } from '../findings.js';
 import { WEB_RESULT_MS } from '../retention.js';
@@ -20,8 +21,10 @@ export function identityOf(user) {
   };
 }
 
-// Een fout van de zoekdienst wordt een fout van het zoeken op het web, zonder details van de dienst.
+// Een fout van de zoekdienst wordt een fout van het zoeken op het web, zonder details van de dienst. Een
+// gestopt onderzoek (JobError) blijft wat het is: dat stopt de hele scan.
 export function asSearchError(error) {
+  if (error instanceof JobError) return error;
   const code = error instanceof ScanError ? SEARCH_ERRORS[error.code] : null;
   return new ScanError(code ?? 'search_failed');
 }
@@ -29,7 +32,8 @@ export function asSearchError(error) {
 // Zoekt één zoekopdracht en bewaart de resultaten.
 //   via   met welk gegeven: 'naam', 'telefoon' of 'e-mail'
 //   keep  welke resultaten we houden (bijvoorbeeld alleen die op een databrokersite)
-// Geeft { results, added }.
+// Geeft { results, added, total }: total is hoeveel resultaten de zoekdienst gaf, voor `keep`. Gaf hij er
+// net zoveel als hij maximaal geeft, dan kunnen er resultaten weggevallen zijn (zie broker-scan.js).
 export async function searchAndSave({
   db, user, search, query, via, now, keep = () => true,
 }) {
@@ -39,7 +43,8 @@ export async function searchAndSave({
   } catch (error) {
     throw asSearchError(error);
   }
-  const results = cleanResults(raw).filter(keep);
+  const all = cleanResults(raw);
+  const results = all.filter(keep);
   const who = identityOf(user);
   const rate = (result) => (search.isDemo
     ? DEMO_CONFIDENCE
@@ -51,5 +56,5 @@ export async function searchAndSave({
     via,
     category: (result) => classifyUrl(result.url).type,
   });
-  return { results, added };
+  return { results, added, total: Array.isArray(raw) ? raw.length : all.length };
 }

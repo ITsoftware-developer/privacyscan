@@ -17,22 +17,83 @@ geen ontbrekende functie: Privacyscan vindt en laat zien, wat je daarna doet bep
 > soort gegeven in een datalek zat (bijvoorbeeld telefoonnummers) betekent niet dat jouw nummer eruit
 > gelekt is: niet elk slachtoffer van een lek verloor elke soort gegeven.
 
-## Wat is er nieuw in 0.8.0? Databrokers, uitgebreid onderzoek en een wachtrij
+## Wat is er nieuw in 0.9.0? De AI-agent, pagina's zelf lezen, en de punten uit de beoordeling
+
+Versie 0.8.0 kreeg weer een kritische beoordeling. Zo is er mee omgegaan:
+
+| Punt uit de beoordeling | Wat er nu is |
+|---|---|
+| Fase 3 is niet af: je vindt alleen wat de zoekmachine over databrokers weet | Klopt. Fase 3 heet weer *begonnen*. Wat de databrokers in hun eigen database hebben, zien we niet: daarvoor is een geautoriseerde koppeling of een inzageverzoek nodig. |
+| Een pagina op een databrokersite telt mee zonder dat je gegevens erin staan | Per databroker is er nu onderscheid tussen een *overeenkomst* (je naam, bevestigde nummer of e-mailadres staat in de titel of het fragment), alleen een *mogelijk relevante pagina*, *niets in de zoekmachine* (wat niet betekent dat ze niets over je hebben), een *database die niet toegankelijk is*, *zoeken mislukt* en *overgeslagen*. |
+| Groepjes databrokers delen hooguit 20 resultaten | Geeft de zoekdienst voor een groepje het maximum, dan zoeken we per databroker apart, binnen de grens per Deep Scan. Lukt dat niet, dan staat er *mogelijk onvolledig*. |
+| De kostengrens kan bij gelijktijdige aanvragen doorbroken worden | In 0.8.0 telde een lopende aanvraag al mee, maar alleen in het geheugen van één proces. Nu neemt elke aanvraag eerst een plek in de database, en tellen en reserveren gebeuren in één transactie (`BEGIN IMMEDIATE`). Zo kunnen ook twee processen met dezelfde database niet samen door de grens. De testknop voor Brave op de beheerpagina telt ook mee. |
+| Een lopend onderzoek merkt niet dat je toestemming intrekt of geblokkeerd wordt | Voor elke stap en elke aanvraag, ook aan de AI, leest het onderzoek je account opnieuw. Geblokkeerd of verwijderd: het onderzoek stopt. Nummer verwijderd of zoeken op je e-mailadres uitgezet: die stap wordt overgeslagen. |
+| Een onderzoek kan niet gestopt worden | Er is een knop *Stop onderzoek* voor je eigen Deep Scan, en de beheerder kan elk onderzoek stoppen. Wacht het nog, dan stopt het meteen; loopt het, dan bij het volgende controlepunt. |
+| Alleen zoekmachinefragmenten, niets onafhankelijk gecontroleerd | De Deep Scan leest nu zelf een paar gevonden gewone webpagina's en kijkt of je gegevens er echt op staan (zie hieronder). |
+| Geen eigen AI-agent | Een lokaal AI-model via Ollama kijkt mee (zie hieronder). |
+| Controleer of je bronnen AI-verwerking toestaan | Brave verbiedt in zijn voorwaarden (3(b)(xiii)) om zoekresultaten te gebruiken om AI-modellen of AI-diensten te maken, te beoordelen, te trainen of bij te stellen. Zijn Search-abonnement biedt Brave juist aan voor agents en chatbots die er antwoorden mee maken. Wij gebruiken resultaten alleen als invoer voor een antwoord, trainen niets en bewaren niets langer dan 30 minuten. De AI krijgt alleen webresultaten, geen gegevens over datalekken. |
+| Geen echte sms-dienst, geen tweestapsverificatie | Nog niet. Een sms-dienst vraagt een keuze voor een aanbieder (met kosten). Tweestapsverificatie moet er zijn voordat de site openbaar gaat. |
+
+**De Deep Scan heeft nu twaalf stappen.** Na het zoeken komen er twee bij: *Gevonden pagina's zelf controleren* en
+*AI-analyse en vervolgonderzoek*.
+
+**Pagina's zelf lezen.** Een zoekmachine geeft alleen een titel en een kort fragment, en dat kan oud zijn. Daarom
+opent de server bij de Deep Scan hooguit 6 gevonden gewone webpagina's, en kijkt hij of je naam, woonplaats,
+bevestigde e-mailadres of nummer er echt op staan. Dat gaat voorzichtig:
+- alleen openbare adressen. De server kijkt bij het verbinden welk IP-adres een naam heeft, ook na een
+  doorverwijzing, en weigert alles wat intern is (`127.0.0.1`, `10.x`, `192.168.x`, `169.254.169.254`, `::1`,
+  `::ffff:`-adressen). Zo kan een pagina de server niet laten praten met je router of met de server zelf;
+- robots.txt van de site geldt. Kan robots.txt niet gelezen worden, dan lezen we de pagina ook niet;
+- sites van databrokers, personenzoeksites en sociale media openen we niet, omdat hun voorwaarden dat verbieden;
+- per pagina hooguit 1,5 MB en 10 seconden, en alleen html en platte tekst. Pdf-bestanden lezen we nog niet;
+- we bewaren niet de pagina. We bewaren alleen welke van je gegevens erop stonden en een kort stukje tekst rond
+  je naam, bij het webresultaat. Dat verdwijnt samen met het resultaat.
+
+Staat je bevestigde e-mailadres of nummer op de pagina zelf, dan wordt het een sterke overeenkomst. Met
+`PAGE_CHECK=off` zet je het lezen uit.
+
+**De AI-agent.** Met `AI_PROVIDER=ollama` kijkt een AI-model mee dat op je eigen computer draait
+([Ollama](https://ollama.com)). Er gaat dan niets naar een externe AI-dienst, en het kost niets. De AI doet twee dingen:
+1. *Vervolgonderzoek:* hij kiest welke gevonden pagina's we nog lezen, hooguit 3 extra. Hij kiest alleen uit de
+   resultaten van je eigen zoekopdrachten, en nooit databrokers of sociale media. Nieuwe zoekopdrachten bedenkt hij
+   niet: die zouden gaan over gegevens waarvan niet vaststaat dat ze van jou zijn.
+2. *Beoordelen:* voor hooguit 6 resultaten zegt hij of het over jou lijkt te gaan, en welke gegevens erin staan.
+
+Zo voorkomen we dat de AI iets verzint:
+- elk gegeven dat hij noemt, moet letterlijk in de tekst staan. De site controleert dat, en gooit de rest weg
+  (dat aantal staat erbij);
+- een eigen toelichting in vrije tekst vragen we niet, omdat we die niet kunnen controleren;
+- zegt hij "over jou" terwijl je naam, e-mailadres en nummer niet in de tekst staan, dan wordt het "niet te
+  zeggen";
+- de zekerheid van een bevinding blijft van de vaste regels. De AI geeft er een inschatting naast, en alleen jij
+  bevestigt "Dit ben ik".
+
+Zo zet je de AI aan:
+1. Installeer Ollama van [ollama.com/download](https://ollama.com/download).
+2. Haal een model op: `ollama pull qwen3:8b` (5,2 GB). Heeft je computer weinig geheugen, kies dan `qwen3:4b`
+   (2,5 GB) en zet `OLLAMA_MODEL=qwen3:4b`.
+3. Zet `AI_PROVIDER=ollama` in je `.env` en start de site opnieuw.
+
+Op een computer zonder sterke videokaart kan elk antwoord een minuut duren. De Deep Scan loopt toch op de
+achtergrond, en per scan zijn het hooguit 7 vragen. Op de beheerpagina staat Ollama bij de databronnen, met een
+testknop en een pauzeknop. Je ziet daar ook hoeveel vragen er gesteld zijn.
+
+## Wat was er nieuw in 0.8.0? Databrokers, uitgebreid onderzoek en een wachtrij
 
 Deze versie volgt de prioriteiten uit je wensenlijst. Zo staat het ervoor:
 
 | Wens (prioriteit) | Stand |
 |---|---|
-| Data Broker Engine (zeer hoog) | **Gebouwd.** Een register van 15 databrokers en telefoongidsen (Nederland, Duitsland, het Verenigd Koninkrijk, de VS en Pipl wereldwijd), met per bedrijf welke gegevens het volgens eigen opgave verwerkt, in welke landen, hoe wij het mogen onderzoeken en de bron waarmee dat is nagekeken. Per account zie je per databroker of er iets gevonden is, wanneer er gekeken is en of dat lukte. |
+| Data Broker Engine (zeer hoog) | **Gebouwd** (en in 0.9.0 eerlijker gemaakt: zie hierboven). Een register van 15 databrokers en telefoongidsen (Nederland, Duitsland, het Verenigd Koninkrijk, de VS en Pipl wereldwijd), met per bedrijf welke gegevens het volgens eigen opgave verwerkt, in welke landen, hoe wij het mogen onderzoeken en de bron waarmee dat is nagekeken. Per account zie je per databroker of er iets gevonden is, wanneer er gekeken is en of dat lukte. |
 | Onderzoek naar je eigen telefoonnummer (zeer hoog) | **Gebouwd**, met een sms-code: pas als je de code invult, onderzoeken we het nummer. Online is er nog geen sms-dienst, dus daar kan het nog niet (zie hieronder). |
 | Uitgebreid onderzoek naar je naam en e-mailadres (zeer hoog) | **Gebouwd.** Op je naam: databrokers, sociale media en openbare documenten (pdf, Word, Excel). Op je e-mailadres: alleen als je dat zelf aanzet, want dan gaat het adres naar de zoekdienst. |
 | Permanente onderzoekswachtrij (zeer hoog) | **Gebouwd.** De Deep Scan loopt op de achtergrond, met voortgang per stap. |
 | Bewijs- en identiteitsverificatie (zeer hoog) | **Gebouwd voor wat te bewijzen is:** je e-mailadres met een link, je telefoonnummer met een sms-code. Bij elk webresultaat staat met welk gegeven het gevonden is, en een resultaat met je bevestigde e-mailadres of telefoonnummer erin heet een *sterke overeenkomst*. Voor je naam is er nog geen identiteitscheck (zoals iDIN): online zoekt daarom alleen de beheerder op naam. |
 | Automatische kostenlimieten (hoog) | **Gebouwd.** Een grens per dag, per maand en per Deep Scan. |
-| Eigen AI-agent (zeer hoog) | **Nog niet.** Daarvoor moet eerst gekozen worden welke AI-dienst hij gebruikt (zie "Volgende stappen"). |
+| Eigen AI-agent (zeer hoog) | **Nog niet** in 0.8.0; in 0.9.0 begonnen (zie hierboven). |
 | Design (geen) | Niet aangeraakt. |
 
-**De Deep Scan heeft nu tien stappen:** datalekken, je naam op het web, databrokers, sociale media, documenten,
+**De Deep Scan had in 0.8.0 tien stappen:** datalekken, je naam op het web, databrokers, sociale media, documenten,
 je telefoonnummer, je e-mailadres, darkweb, blootstelling beoordelen, en bewijs controleren en combineren. Een stap
 die niet mag of kan, staat er met de reden. Het darkweb staat als *Niet beschikbaar*: er is geen geautoriseerde
 aanbieder, en een eigen darkweb-crawler bouwen we niet.
@@ -129,11 +190,12 @@ zaken, afgestemd op jouw instellingen.
 | Zoeken op je e-mailadres op het web | **Werkt met een sleutel** | Alleen als je het zelf aanzet bij Zoekgegevens. |
 | Zoeken op het web naar je eigen naam | **Werkt met een sleutel** | Via Brave Search, zodra je `BRAVE_API_KEY` hebt ingesteld. Elk resultaat is een *mogelijke overeenkomst*, met de reden erbij. Zonder sleutel zoekt de site niet en verzint hij niets. De koppeling is gebouwd naar de documentatie van Brave en getest met nagebootste antwoorden, nog niet tegen de echte dienst: draai `npm run controleer` met je eigen sleutel. |
 | Sociale media en openbare documenten | **Werkt met een sleutel** | Gericht zoeken op je naam bij LinkedIn, Facebook, Instagram, X, TikTok en YouTube, en naar pdf-, Word- en Excel-bestanden. Alleen wat openbaar in de zoekdienst staat. |
-| Zoeken op de achtergrond, met voortgang | **Werkt** | De Deep Scan loopt in een wachtrij, met voortgang per stap en herstel na een herstart. |
-| Databrokers | **Werkt met een sleutel** | Fase 3: een register van 15 databrokers en telefoongidsen, gericht doorzocht via de zoekdienst. Alleen vinden en tonen. |
+| Zoeken op de achtergrond, met voortgang | **Werkt** | De Deep Scan loopt in een wachtrij, met voortgang per stap, herstel na een herstart en een knop om te stoppen. |
+| Databrokers | Deels (met een sleutel) | Fase 3: een register van 15 databrokers en telefoongidsen, gericht doorzocht via de zoekdienst, met per databroker het onderscheid tussen een overeenkomst en alleen een pagina. Wat ze in hun eigen database hebben, zien we niet. |
+| Gevonden pagina's zelf lezen | **Werkt** | Hooguit 6 gewone webpagina's per Deep Scan (geen databrokers en sociale media), met robots.txt en alleen openbare adressen. Pdf nog niet. |
+| AI-agent | Begonnen (met Ollama) | Een lokaal model kiest welke pagina's we nog lezen en beoordeelt de resultaten, met alleen letterlijke citaten. Hij bedenkt geen zoekopdrachten. |
 | Kostenlimieten | **Werkt** | Per dag, per maand en per Deep Scan. |
 | Darkweb via geautoriseerde bronnen | Gepland | Alleen via een aanbieder die dit legaal levert. Geen eigen crawler. |
-| Zelfstandig onderzoek door een AI-agent | Gepland | Fase 5. Er is nu geen AI in de app. Eerst moet gekozen worden welke AI-dienst hij gebruikt. De voorwaarden van Brave verbieden bovendien om hun resultaten te gebruiken om AI-modellen te trainen of te beoordelen. |
 | Doorlopende monitoring | Gepland | Fase 6. |
 | Gegevens van het internet verwijderen | Bewust niet | De app zoekt en toont. |
 | Verwijderverzoeken versturen | Bewust niet | Idem. Je eigen account bij Privacyscan wissen kan wel altijd. |
@@ -144,9 +206,9 @@ zaken, afgestemd op jouw instellingen.
 |---|---|---|
 | 1 | Veilig fundament: account, inloggen, e-mail bevestigen, database, dashboard | Klaar |
 | 2 | Breach Intelligence Engine: datalekken en blootstelling, met twee bronnen | Klaar (darkweb volgt zodra er een geautoriseerde aanbieder is) |
-| 3 | Data Broker Engine: gericht zoeken bij een register van databrokers en telefoongidsen | Klaar |
-| 4 | Deep Research Engine: openbare internetbronnen en documenten | Grotendeels: de Deep Scan op de achtergrond, Brave, sociale media, documenten, je telefoonnummer en e-mailadres, en het combineren van bewijs bestaan; de gevonden pagina's zelf lezen nog niet |
-| 5 | Eigen AI-agent | Nog niet gebouwd |
+| 3 | Data Broker Engine: gericht zoeken bij een register van databrokers en telefoongidsen | Begonnen: wat de zoekmachine kent, met overeenkomst of alleen een pagina; geen geautoriseerde koppelingen met databrokers |
+| 4 | Deep Research Engine: openbare internetbronnen en documenten | Grotendeels: de Deep Scan op de achtergrond, Brave, sociale media, documenten, je telefoonnummer en e-mailadres, gevonden pagina's zelf lezen en het combineren van bewijs; pdf lezen nog niet |
+| 5 | Eigen AI-agent | Begonnen: een lokaal model (Ollama) kiest pagina's en beoordeelt resultaten met letterlijke citaten |
 | 6 | Continuous Monitoring | Nog niet gebouwd |
 
 Een fase heet pas klaar als alles erin echt werkt. De pagina `/bronnen` en het dashboard tonen dezelfde stand.
@@ -295,14 +357,18 @@ Zet ze in een bestand `.env`: kopieer `.env.example` naar `.env` en pas het aan.
 | `OWNER_EMAIL`      | leeg                        | Jouw e-mailadres: dat account komt op de beheerpagina (`/beheerder`), en mag online als enige op naam zoeken (zie "Later online zetten") |
 | `BRAVE_MAX_PER_DAY` | `100`                      | Hooguit zoveel zoekopdrachten per dag (UTC). Daarna zoekt de site niet meer tot de dag om is   |
 | `BRAVE_MAX_PER_MONTH` | `900`                    | Hooguit zoveel per maand. 900 blijft binnen het gratis maandtegoed van Brave ($5 bij $5 per 1.000) |
-| `MAX_QUERIES_PER_SCAN` | `25`                    | Hooguit zoveel zoekopdrachten in één Deep Scan (nu gebruikt hij er 5 tot 7)                    |
+| `MAX_QUERIES_PER_SCAN` | `25`                    | Hooguit zoveel zoekopdrachten in één Deep Scan (meestal 5 tot 7; meer als een groepje databrokers het maximum geeft) |
+| `PAGE_CHECK`       | aan                         | `off` zet het zelf lezen van gevonden pagina's uit                                            |
+| `AI_PROVIDER`      | leeg                        | `ollama` zet de AI-agent aan, met een model op je eigen computer (zie "Wat is er nieuw in 0.9.0") |
+| `OLLAMA_URL`       | `http://127.0.0.1:11434`    | Waar Ollama draait. Een ander adres dan deze computer: dan gaan je gegevens daarheen          |
+| `OLLAMA_MODEL`     | `qwen3:8b`                  | Welk model. Met weinig geheugen: `qwen3:4b`                                                   |
 
 | Commando                | Wat het doet                                                      |
 |-------------------------|-------------------------------------------------------------------|
 | `npm start`             | Start de site                                                     |
 | `npm run dev`           | Start de site en herstart automatisch als je een bestand wijzigt  |
 | `npm run controleer`    | Probeert Brave en XposedOrNot echt uit, met je eigen sleutel      |
-| `npm test`              | Draait alle tests (587 stuks, een paar seconden)                  |
+| `npm test`              | Draait alle tests (636 stuks, een paar seconden)                  |
 | `npm run test:coverage` | Draait de tests en laat zien welke regels code ze niet raken      |
 
 Alle gegevens staan in `data/privacyscan.db`. Gooi je die map weg, dan begin je opnieuw.
@@ -339,7 +405,7 @@ src/
   sources.js        de bronnen van datalekken, het bronnenregister en de zes fases
   confidence.js     hoe zeker is een bevinding? De regels, met bij elke beoordeling de reden
   engine.js         de onderdelen van de Deep Scan: stappen en statussen, blootstelling, verificatie
-  scanner.js        de Deep Scan zelf: voert de tien stappen uit en bewaart het rapport
+  scanner.js        de Deep Scan zelf: voert de twaalf stappen uit en bewaart het rapport
   jobs/queue.js     de onderzoekswachtrij in de database: klaarzetten, oppakken, voortgang, afronden
   jobs/worker.js    werkt de wachtrij op de achtergrond af, één onderzoek tegelijk, ook na een herstart
   research/orchestrator.js  wat de werker doet bij een Deep Scan: het account opnieuw lezen, de grenzen, het log
@@ -347,6 +413,10 @@ src/
   research/web-research.js  één zoekopdracht uitvoeren, beoordelen en bewaren met "gevonden via"
   research/broker-scan.js   de Data Broker Engine: zoeken bij databrokers en per databroker bijhouden wat er was
   brokers/registry.js       het register van databrokers en telefoongidsen, met bronnen
+  research/page-reader.js   gevonden pagina's veilig zelf lezen: alleen openbare adressen, robots.txt, grenzen
+  research/page-check.js    wat er op een gelezen pagina stond, vastgelegd bij het webresultaat
+  ai/ollama.js              de koppeling met Ollama: een vraag, een antwoord in een vast formaat (JSON-schema)
+  ai/agent.js               de AI-agent: pagina's kiezen en resultaten beoordelen, en controleren dat hij niets verzint
   data-classes.js   Nederlandse namen voor de soorten gelekte gegevens ("Passwords" wordt "Wachtwoorden")
   search.js         de zoekopdracht opbouwen, resultaten opschonen, de zoekdiensten (Brave en de demo)
   scans.js          het eigenlijke zoeken: vraag het aan een dienst, bewaar wat terugkomt
@@ -362,7 +432,7 @@ src/
 views/              de pagina's (HTML met EJS)
   bronnen.ejs             het bronnenregister en de roadmap
   beheerder.ejs           de beheerpagina
-  partials/engine.ejs     het paneel "Research Engine" met de tien stappen
+  partials/engine.ejs     het paneel "Research Engine" met de twaalf stappen
   partials/evidence.ejs   de bron, datum en zekerheid bij een bevinding
 public/             de vormgeving (CSS)
 scripts/            controleer-bronnen.js: `npm run controleer`
@@ -374,7 +444,7 @@ test/               de tests
 ## Hoe het zoeken werkt
 
 **De Deep Scan.** Op het dashboard staat **Start Deep Scan**. De knop zet het onderzoek in de wachtrij, en de
-server doorloopt op de achtergrond tien stappen, in deze volgorde:
+server doorloopt op de achtergrond twaalf stappen, in deze volgorde:
 
 1. *Datalekdatabases onderzoeken.* Een echte controle van het bevestigde e-mailadres van je account,
    bij XposedOrNot of Have I Been Pwned.
@@ -388,11 +458,15 @@ server doorloopt op de achtergrond tien stappen, in deze volgorde:
 6. *Je telefoonnummer.* Alleen een nummer dat je met een sms-code hebt bevestigd, in vier schrijfwijzen in
    één zoekopdracht (`"0612345678" OR "06-12345678" OR …`). Zonder bevestigd nummer: "Overgeslagen".
 7. *Je e-mailadres.* Alleen als je dat zelf hebt aangezet; anders "Overgeslagen".
-8. *Darkweb.* "Niet beschikbaar": er is geen geautoriseerde aanbieder gekoppeld.
-9. *Mogelijke blootstelling beoordelen.* Rekenwerk op de gevonden lekken: welke soorten gegevens zaten in
+8. *Gevonden pagina's zelf controleren.* Hooguit 6 gewone webpagina's uit de resultaten van deze scan, veilig
+   gelezen (zie "Wat is er nieuw in 0.9.0"). Staat het uit (`PAGE_CHECK=off`): "Niet beschikbaar".
+9. *AI-analyse en vervolgonderzoek.* Met `AI_PROVIDER=ollama`: de AI kiest hooguit 3 extra pagina's om te lezen en
+   beoordeelt hooguit 6 resultaten, met alleen letterlijke citaten. Zonder AI: "Niet beschikbaar".
+10. *Darkweb.* "Niet beschikbaar": er is geen geautoriseerde aanbieder gekoppeld.
+11. *Mogelijke blootstelling beoordelen.* Rekenwerk op de gevonden lekken: welke soorten gegevens zaten in
    die lekken, met een korte raad. Nooit de gegevens zelf, want die hebben we niet, en niet wat er van jou
    in stond: een soort gegeven in een lek betekent niet dat jouw gegeven eruit gelekt is.
-10. *Bewijs controleren en combineren.* Heeft elke bevinding een bron, een datum en een zekerheid? Dit is een
+12. *Bewijs controleren en combineren.* Heeft elke bevinding een bron, een datum en een zekerheid? Dit is een
    **controle van onze eigen administratie** en geen controle van de bron zelf. Of een lek echt jouw gegevens
    bevatte, of een webpagina echt over jou gaat, kun jij alleen nagaan door de bron te openen. Daarnaast telt
    deze stap welke webresultaten met meer dan één van je gegevens gevonden zijn, en welke een sterke
@@ -422,9 +496,13 @@ voor de kostenlimieten als het aantal zoekopdrachten dat hij echt deed.
 telefoongids de naam, het domein, de landen, wat voor bedrijf het is, welke gegevens het volgens eigen opgave
 verwerkt, hoe wij het mogen onderzoeken en de bron waarmee dat is nagekeken (op 26 november 2026). Wat we niet
 konden nakijken, staat er niet in. De doorzoekbare databrokers gaan in twee zoekopdrachten (Europa en de VS
-apart, zodat de ene groep de resultaten van de andere niet wegdrukt). Per account bewaren we per databroker
-alleen: de toestand (*Mogelijke vermelding*, *Niets gevonden*, *Niet toegankelijk*, *Overgeslagen*,
-*Afgeschermd* of *Nog niet gecontroleerd*), het aantal pagina's, met welk gegeven ze gevonden zijn en wanneer.
+apart, zodat de ene groep de resultaten van de andere niet wegdrukt). Geeft de zoekdienst voor een groep het
+maximum aantal resultaten, dan zoeken we per databroker apart (binnen de grens per Deep Scan); lukt dat niet, dan
+staat er *mogelijk onvolledig*. Per account bewaren we per databroker alleen: de toestand (*Overeenkomst*,
+*Mogelijk relevante pagina*, *Niets in de zoekmachine*, *Database niet toegankelijk*, *Zoeken mislukt*,
+*Overgeslagen* of *Nog niet gecontroleerd*), het aantal pagina's en hoeveel daarvan je gegevens noemen, met welk
+gegeven ze gevonden zijn, of de zoekdienst alles kon geven, en wanneer. *Niets in de zoekmachine* betekent niet dat
+het bedrijf niets over je heeft: wat niet in een zoekmachine staat, zien we niet.
 Aan het eind van een Deep Scan telt elke databrokerpagina één keer, ook als hij met je naam én je telefoonnummer
 gevonden is, en telt een databrokerpagina uit de gewone zoekopdracht op je naam ook mee. De resultaten zelf staan
 bij "Op het web", met dezelfde bewaartermijn als de rest.
@@ -665,6 +743,10 @@ blijft je keuze als vingerafdruk van het adres bestaan, ook als het resultaat ze
   altijd verwijderen bij Zoekgegevens. De code zelf staat er nooit in (alleen een HMAC, hooguit 10 minuten).
 - Per databroker bewaart de **Data Broker Engine** alleen de toestand, het aantal pagina's, met welk gegeven
   en wanneer: geen adressen of teksten. Die staan bij de webresultaten, met hun eigen bewaartermijn.
+- Van een **gelezen pagina** bewaren we alleen welke van je gegevens erop stonden en een kort stukje tekst rond je
+  naam. Wat de **AI** vond (een inschatting en gegevens die letterlijk in de tekst staan) staat ook bij het
+  webresultaat. Beide verdwijnen samen met het resultaat. De AI draait standaard op je eigen computer; een
+  `OLLAMA_URL` naar een andere computer staat in de privacyverklaring en op de beheerpagina.
 - De **privacyverklaring** staat op `/privacy`. Vul `CONTACT_NAME` en `CONTACT_EMAIL`
   in je `.env` in voordat je de site online zet. De tekst past zich aan op de instellingen:
   met `production` staat er dat zoeken op naam uit staat (of dat alleen de beheerder zoekt, als je
@@ -717,9 +799,12 @@ blijft je keuze als vingerafdruk van het adres bestaan, ook als het resultaat ze
   in het overzicht staat zo'n databroker als *Afgeschermd*.
 - **De sites van databrokers zelf openen of hun zoekfunctie gebruiken.** Bewust niet: we zoeken via de
   zoekdienst. Veel van die sites verbieden geautomatiseerd gebruik in hun voorwaarden.
-- **Een AI-agent (fase 5).** Komt er een, dan geldt dezelfde regel als nu: geen bevinding zonder
-  controleerbare bron, datum en zekerheid. De agent mag onderzoek plannen, samenvatten en beoordelen,
-  maar niets verzinnen, en bronnen die niet toegankelijk waren, moeten genoemd worden.
+- **De AI laat zelf zoekopdrachten bedenken, of een eigen verhaal schrijven.** Bewust niet: een zoekopdracht
+  van de AI zou gaan over gegevens waarvan niet vaststaat dat ze van jou zijn (een oude woonplaats op een
+  pagina, een naamgenoot), en een toelichting in vrije tekst kunnen we niet controleren. De AI kiest pagina's en
+  beoordeelt, met alleen letterlijke citaten. Een AI-dienst in de cloud (zoals Claude of ChatGPT) is er ook niet:
+  dan gaan je gegevens naar die dienst. De koppeling in `ai/` is zo gebouwd dat er later een bij kan.
+- **Pdf-, Word- en Excel-bestanden openen.** De paginalezer leest alleen html en platte tekst.
 - **Doorlopende monitoring (fase 6).** Automatisch opnieuw scannen met een mail bij iets nieuws. Eerst
   is er een echte bron nodig om steeds opnieuw te bevragen.
 - **De betaalde dienst van XposedOrNot (xonAPI+).** Die heeft hogere limieten en is bedoeld voor
@@ -801,14 +886,13 @@ pas aan een stap als je hem echt wilt.
   sleutel; `pwned.js` doet hetzelfde al bij het registreren.
 - **Tweestapsverificatie voor de beheerder** (een code uit een app als Microsoft Authenticator), voordat de site
   openbaar gaat: nu komt iedereen met jouw wachtwoord op de beheerpagina.
-- **De AI-agent** (fase 5): onderzoek plannen, bronnen kiezen, resultaten analyseren en overeenkomsten
-  controleren, met het onderscheid bevestigd / mogelijk / niet gecontroleerd, op de achtergrond in de wachtrij
-  die er nu is. Daarvoor moet eerst gekozen worden welke AI-dienst hij gebruikt: dat kost een sleutel en geld,
-  en de persoonsgegevens in een onderzoek gaan dan naar die dienst. Let op de voorwaarden van Brave: hun
-  resultaten mogen niet gebruikt worden om AI-modellen te trainen, te beoordelen of te verbeteren.
+- **De AI-agent verder** (fase 5): de dekking van een onderzoek beoordelen (welke bronnen ontbraken en waarom) en
+  voorstellen doen voor vervolgonderzoek dat jij eerst bevestigt, bijvoorbeeld zoeken op een oude woonplaats die
+  op een pagina stond. Zo blijft het onderzoek bij gegevens waarvan vaststaat dat ze van jou zijn.
+- **Pdf-bestanden lezen**, met dezelfde voorzichtigheid als webpagina's.
 - **Een sms-dienst**, zodat ook online een telefoonnummer bevestigd kan worden.
-- **Pagina's zelf onderzoeken**: alleen bij bronnen waar dat mag, en met de afwegingen die daarbij horen (de
-  voorwaarden van de site, robots.txt, wat je bewaart).
+- **Geautoriseerde koppelingen met databrokers**, of hulp bij een inzageverzoek (AVG artikel 15), om te zien wat
+  ze in hun eigen database hebben.
 - **Een identiteitscontrole** (bijvoorbeeld iDIN of een ID-scan) voordat zoeken op naam voor andere
   gebruikers opengaat.
 - **Een toestemmingsprocedure voor onderzoek naar iemand anders**, pas ná de identiteitscontrole.
@@ -826,6 +910,10 @@ pas aan een stap als je hem echt wilt.
 - [Brave Search API: limieten](https://api-dashboard.search.brave.com/documentation/guides/rate-limiting): de headers
   `X-RateLimit-Limit`, `-Policy`, `-Remaining` en `-Reset` die de beheerpagina leest, en dat alleen geslaagde
   aanvragen meetellen en betaald worden.
+- [Ollama API: chat](https://docs.ollama.com/api/chat): `POST /api/chat` met `format` (een JSON-schema voor een vast
+  antwoord), `stream: false`, `think` en `options` zoals `temperature`. Het model `qwen3:8b` staat in de
+  [bibliotheek van Ollama](https://ollama.com/library/qwen3) (5,2 GB).
+- [RFC 9309: robots.txt](https://www.rfc-editor.org/rfc/rfc9309): hoe de paginalezer robots.txt leest.
 - [Brave Search API: zoekoperatoren](https://api-dashboard.search.brave.com/documentation/resources/search-operators):
   `site:` (ook subdomeinen), `filetype:`, en `AND`/`OR`/`NOT` in hoofdletters, gewoon in de zoekopdracht.
 - [Brave Search API](https://brave.com/search/api): de actuele prijzen, en de

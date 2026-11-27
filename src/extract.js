@@ -131,7 +131,7 @@ export function extractSignals({ title = '', snippet = '' } = {}, { ownEmail = n
 
 // --- Soort site ----------------------------------------------------------------------------------
 
-const SOCIAL = [
+export const SOCIAL = [
   'facebook.com', 'instagram.com', 'linkedin.com', 'x.com', 'twitter.com', 'tiktok.com',
   'pinterest.com', 'reddit.com', 'snapchat.com', 'threads.net', 'tumblr.com', 'flickr.com',
   'youtube.com', 'strava.com',
